@@ -1,0 +1,22 @@
+# Xcode / Swift
+build/
+DerivedData/
+*.xcuserstate
+xcuserdata/
+*.ipa
+*.dSYM.zip
+*.dSYM
+Pods/
+.swiftpm/
+
+# Android / Kotlin (later)
+.gradle/
+local.properties
+*.aab
+*.apk
+
+# secrets — never commit keys or provisioning secrets
+*.p8
+*.p12
+*.mobileprovision
+.env
