@@ -1,0 +1,387 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		24CF14CAC54B62FDF626EB48 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81E51DF90B7C5399D47D0D07 /* Views.swift */; };
+		2C327F66D920366FF5644D01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5DFA31AF26395F64D98DF4C6 /* Assets.xcassets */; };
+		4505D0B7FE3A7D9185E70701 /* NovarePhoneApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29ED53C5B0365249F436ACC7 /* NovarePhoneApp.swift */; };
+		7EB341DA4C0BB8963AD6CA2B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FE6B64BE1B6B684714147BC /* AppDelegate.swift */; };
+		9A42BDA143189500E51536FF /* CallManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D61289447EC7B31B41547D /* CallManager.swift */; };
+		B1931DA909921B8CCE457E8E /* SipEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0BE095408718A35EFAF55A /* SipEngine.swift */; };
+		C856907C78333D2CAC0F01FB /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AED1EE6011B9A0662C26A046 /* SessionStore.swift */; };
+		FA09B8035B249B6A50F33DC8 /* linphonesw in Frameworks */ = {isa = PBXBuildFile; productRef = 0D0D8D6C5E25EF1D692D5DAC /* linphonesw */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		29ED53C5B0365249F436ACC7 /* NovarePhoneApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NovarePhoneApp.swift; sourceTree = "<group>"; };
+		42D61289447EC7B31B41547D /* CallManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallManager.swift; sourceTree = "<group>"; };
+		5DFA31AF26395F64D98DF4C6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		5FE6B64BE1B6B684714147BC /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		81E51DF90B7C5399D47D0D07 /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
+		AB44FA0FDC0839B7E6FB4283 /* NovarePhone.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = NovarePhone.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		AED1EE6011B9A0662C26A046 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
+		FE0BE095408718A35EFAF55A /* SipEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SipEngine.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		01A6DFC1ADA36FC249E2F070 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				FA09B8035B249B6A50F33DC8 /* linphonesw in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		26634D2C5F6D13C12FC9BC25 = {
+			isa = PBXGroup;
+			children = (
+				EEBD9CC70D95C3B41F17FC4C /* NovarePhone */,
+				F23D0A2DF2FC05658256A2A8 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+		54784BF07F8FEC988700900F /* Sources */ = {
+			isa = PBXGroup;
+			children = (
+				5DFA31AF26395F64D98DF4C6 /* Assets.xcassets */,
+				6A1FB2C71D2D3C1C0658B535 /* App */,
+			);
+			path = Sources;
+			sourceTree = "<group>";
+		};
+		6A1FB2C71D2D3C1C0658B535 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				5FE6B64BE1B6B684714147BC /* AppDelegate.swift */,
+				42D61289447EC7B31B41547D /* CallManager.swift */,
+				29ED53C5B0365249F436ACC7 /* NovarePhoneApp.swift */,
+				AED1EE6011B9A0662C26A046 /* SessionStore.swift */,
+				FE0BE095408718A35EFAF55A /* SipEngine.swift */,
+				81E51DF90B7C5399D47D0D07 /* Views.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		EEBD9CC70D95C3B41F17FC4C /* NovarePhone */ = {
+			isa = PBXGroup;
+			children = (
+				54784BF07F8FEC988700900F /* Sources */,
+			);
+			path = NovarePhone;
+			sourceTree = "<group>";
+		};
+		F23D0A2DF2FC05658256A2A8 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				AB44FA0FDC0839B7E6FB4283 /* NovarePhone.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		6BC3DD221291B2CE80774845 /* NovarePhone */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 302CCCD49575572FFDB8A93F /* Build configuration list for PBXNativeTarget "NovarePhone" */;
+			buildPhases = (
+				52E987D747A7F2656B83973D /* Sources */,
+				C577335C849B1EDCBF767BE5 /* Resources */,
+				01A6DFC1ADA36FC249E2F070 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = NovarePhone;
+			packageProductDependencies = (
+				0D0D8D6C5E25EF1D692D5DAC /* linphonesw */,
+			);
+			productName = NovarePhone;
+			productReference = AB44FA0FDC0839B7E6FB4283 /* NovarePhone.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		C8474A565599454C9D3FA314 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1430;
+				TargetAttributes = {
+					6BC3DD221291B2CE80774845 = {
+						DevelopmentTeam = 8S8JBLPQ9Z;
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 391D093D023D1F433581E21F /* Build configuration list for PBXProject "NovarePhone" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 26634D2C5F6D13C12FC9BC25;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				2CCE75384674DB998C46F03E /* XCRemoteSwiftPackageReference "linphone-sdk-swift-ios" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = F23D0A2DF2FC05658256A2A8 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				6BC3DD221291B2CE80774845 /* NovarePhone */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		C577335C849B1EDCBF767BE5 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				2C327F66D920366FF5644D01 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		52E987D747A7F2656B83973D /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				7EB341DA4C0BB8963AD6CA2B /* AppDelegate.swift in Sources */,
+				9A42BDA143189500E51536FF /* CallManager.swift in Sources */,
+				4505D0B7FE3A7D9185E70701 /* NovarePhoneApp.swift in Sources */,
+				C856907C78333D2CAC0F01FB /* SessionStore.swift in Sources */,
+				B1931DA909921B8CCE457E8E /* SipEngine.swift in Sources */,
+				24CF14CAC54B62FDF626EB48 /* Views.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		89960CD8EA5B1C50EE1914BC /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = NovarePhone/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Nováre Phone";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.novaredigital.novarephone;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		8E89BBD8CC0B4A500650BF1E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				DEVELOPMENT_TEAM = 8S8JBLPQ9Z;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		9D7A08FBC6D41BBF9674CAF3 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_IDENTITY = "iPhone Developer";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = NovarePhone/Info.plist;
+				INFOPLIST_KEY_CFBundleDisplayName = "Nováre Phone";
+				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = com.novaredigital.novarephone;
+				SDKROOT = iphoneos;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		9FCB93762B957D7341B473C2 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				CURRENT_PROJECT_VERSION = 1;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				DEVELOPMENT_TEAM = 8S8JBLPQ9Z;
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
+				MARKETING_VERSION = 1.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = iphoneos;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		302CCCD49575572FFDB8A93F /* Build configuration list for PBXNativeTarget "NovarePhone" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				89960CD8EA5B1C50EE1914BC /* Debug */,
+				9D7A08FBC6D41BBF9674CAF3 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		391D093D023D1F433581E21F /* Build configuration list for PBXProject "NovarePhone" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				8E89BBD8CC0B4A500650BF1E /* Debug */,
+				9FCB93762B957D7341B473C2 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		2CCE75384674DB998C46F03E /* XCRemoteSwiftPackageReference "linphone-sdk-swift-ios" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://gitlab.linphone.org/BC/public/linphone-sdk-swift-ios";
+			requirement = {
+				branch = stable;
+				kind = branch;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		0D0D8D6C5E25EF1D692D5DAC /* linphonesw */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = 2CCE75384674DB998C46F03E /* XCRemoteSwiftPackageReference "linphone-sdk-swift-ios" */;
+			productName = linphonesw;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = C8474A565599454C9D3FA314 /* Project object */;
+}

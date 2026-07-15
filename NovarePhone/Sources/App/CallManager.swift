@@ -20,6 +20,20 @@ final class CallManager: NSObject, CXProviderDelegate {
         provider = CXProvider(configuration: config)
         super.init()
         provider.setDelegate(self, queue: nil)
+
+        // Engine → CallKit bridge: a SIP INVITE (app already awake) surfaces the
+        // native ring screen; a remote hangup / failure ends the CallKit call so
+        // the system UI dismisses. (The VoIP-push path reports via AppDelegate.)
+        SipEngine.shared.onIncomingCall = { [weak self] number, name in
+            self?.reportIncomingCall(from: number, displayName: name) {}
+        }
+        SipEngine.shared.onCallEnded = { [weak self] in
+            self?.endActiveCall()
+        }
+        SipEngine.shared.onCallConnected = { [weak self] in
+            guard let uuid = self?.activeCallUUID else { return }
+            self?.provider.reportOutgoingCall(with: uuid, connectedAt: nil)
+        }
     }
 
     // MARK: - Incoming (from a VoIP push or a live SIP INVITE)

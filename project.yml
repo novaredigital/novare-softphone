@@ -1,0 +1,51 @@
+name: NovarePhone
+options:
+  bundleIdPrefix: com.novaredigital
+  deploymentTarget:
+    iOS: "16.0"
+  createIntermediateGroups: true
+
+packages:
+  linphonesw:
+    # Linphone first-party iOS SDK (liblinphone). Swift product = linphonesw.
+    # AGPLv3 build; swap to the commercial build once Belledonne licenses it.
+    url: https://gitlab.linphone.org/BC/public/linphone-sdk-swift-ios
+    branch: stable
+
+settings:
+  base:
+    MARKETING_VERSION: "1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    DEVELOPMENT_TEAM: "8S8JBLPQ9Z"
+    SWIFT_VERSION: "5.0"
+
+targets:
+  NovarePhone:
+    type: application
+    platform: iOS
+    sources:
+      - path: NovarePhone/Sources
+    dependencies:
+      - package: linphonesw
+        product: linphonesw
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.novaredigital.novarephone
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_CFBundleDisplayName: "Nováre Phone"
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
+        # Simulator builds don't need signing; device/TestFlight adds it later.
+        CODE_SIGN_STYLE: Automatic
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+    info:
+      path: NovarePhone/Info.plist
+      properties:
+        CFBundleDisplayName: "Nováre Phone"
+        # CallKit + VoIP push wake need these background modes.
+        UIBackgroundModes:
+          - voip
+          - audio
+        NSMicrophoneUsageDescription: "Nováre Phone uses the microphone so you can talk on calls."
+        UILaunchScreen:
+          UIColorName: ""
