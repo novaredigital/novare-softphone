@@ -61,7 +61,7 @@ final class SipEngine {
             core.videoActivationPolicy?.automaticallyAccept = false
 
             // Delegate: bridge SIP call state -> CallKit (CallManager).
-            let delegate = CoreDelegateStub(engine: self)
+            let delegate = EngineCoreDelegate(engine: self)
             core.addDelegate(delegate: delegate)
             self.coreDelegate = delegate
 
@@ -97,7 +97,9 @@ final class SipEngine {
     func placeCall(to number: String) {
         guard let core = core else { return }
         do {
-            let addr = try core.interpretUrl(url: "sip:\(number)@\(core.defaultAccount?.params?.domain ?? "")")
+            guard let addr = core.interpretUrl(url: "sip:\(number)@\(core.defaultAccount?.params?.domain ?? "")", applyInternationalPrefix: false) else {
+                log("placeCall failed: bad address for \(number)"); return
+            }
             let params = try core.createCallParams(call: nil)
             params.mediaEncryption = .None
             currentCall = core.inviteAddressWithParams(addr: addr, params: params)
@@ -130,7 +132,7 @@ final class SipEngine {
 
     func audioSessionActivated(_ active: Bool) {
         // CallKit owns the AVAudioSession; hand activation to liblinphone.
-        core?.activateAudioSession(actived: active)
+        core?.activateAudioSession(activated: active)
         log("audioSession(\(active))")
     }
 
@@ -160,14 +162,16 @@ final class SipEngine {
 }
 
 /// Concrete CoreDelegate that forwards call-state changes to the engine.
-private final class CoreDelegateStub: CoreDelegate {
+/// (CoreDelegate is a protocol in linphonesw; the SDK's own CoreDelegateStub
+/// class is closure-based, so this uses a distinct name.)
+private final class EngineCoreDelegate: CoreDelegate {
     weak var engine: SipEngine?
-    init(engine: SipEngine) { self.engine = engine; super.init() }
+    init(engine: SipEngine) { self.engine = engine }
 
-    override func onCallStateChanged(core: Core, call: Call, state: Call.State, message: String) {
+    func onCallStateChanged(core: Core, call: Call, state: Call.State, message: String) {
         engine?.handleCallState(call, state)
     }
-    override func onAccountRegistrationStateChanged(core: Core, account: Account, state: RegistrationState, message: String) {
+    func onAccountRegistrationStateChanged(core: Core, account: Account, state: RegistrationState, message: String) {
         print("[SipEngine] registration -> \(state) \(message)")
     }
 }
