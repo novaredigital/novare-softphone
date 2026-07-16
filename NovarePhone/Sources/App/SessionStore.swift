@@ -32,7 +32,8 @@ final class SessionStore: ObservableObject {
     }
     @Published var lastError: String?
 
-    private var portalTokens: [String: String] = [:]   // Provisioning.key → session token
+    private var portalTokens: [String: String] = [:]   // Provisioning.key → client-portal token (push realm)
+    private var userTokens: [String: String] = [:]      // Provisioning.key → /user realm token (voicemail, works on shared-db prod)
     private var lastPushToken: String?
 
     var isSignedIn: Bool { !accounts.isEmpty }
@@ -49,7 +50,7 @@ final class SessionStore: ObservableObject {
         activeIndex = min(UserDefaults.standard.integer(forKey: activeKey), max(accounts.count - 1, 0))
         if !accounts.isEmpty {
             SipEngine.shared.configure(accounts: accounts, activeIndex: activeIndex)
-            Task { for p in accounts { await portalLogin(for: p) } }
+            Task { for p in accounts { await portalLogin(for: p); await userLogin(for: p) } }
         }
     }
 
@@ -70,6 +71,7 @@ final class SessionStore: ObservableObject {
             try Self.saveToKeychain(accounts, key: keychainKey)
             SipEngine.shared.configure(accounts: accounts, activeIndex: activeIndex)
             await portalLogin(for: p)
+            await userLogin(for: p)
             if let token = lastPushToken { await registerPushToken(token) }
         } catch {
             lastError = "That code isn't a valid Nóvare sign-in code."
@@ -123,6 +125,29 @@ final class SessionStore: ObservableObject {
     /// Voicemail tab needs the portal session for the active line (nil where
     /// the line's server doesn't run the client-portal realm yet).
     func portalToken(for p: Provisioning) -> String? { portalTokens[p.key] }
+
+    /// /user realm token for the active line — this is the voicemail source
+    /// that works on shared-db production (134) AND box 5.
+    func userToken(for p: Provisioning) -> String? { userTokens[p.key] }
+
+    /// Sign the line into the /user realm (extension + SIP password → token).
+    /// This realm exists on every Nóvare PBX and reads the extension's own
+    /// mailbox from the shared db — so voicemail works on prod lines today.
+    private func userLogin(for p: Provisioning) async {
+        struct Body: Codable { let extension_: String; let password: String
+            enum CodingKeys: String, CodingKey { case extension_ = "extension", password } }
+        struct Reply: Codable { let token: String }
+        do {
+            var req = URLRequest(url: p.apiBase.appendingPathComponent("user/login"))
+            req.httpMethod = "POST"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.httpBody = try JSONEncoder().encode(Body(extension_: p.username, password: p.password))
+            let (data, _) = try await URLSession.shared.data(for: req)
+            userTokens[p.key] = try JSONDecoder().decode(Reply.self, from: data).token
+        } catch {
+            // Voicemail tab will show the *97 fallback if this line has no token.
+        }
+    }
 
     private func portalLogin(for p: Provisioning) async {
         struct LoginBody: Codable { let c: Int; let extension_: String; let password: String

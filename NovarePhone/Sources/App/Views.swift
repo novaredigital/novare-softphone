@@ -339,6 +339,7 @@ struct RecentsView: View {
 struct VMessage: Codable, Identifiable {
     let id: Int
     let caller_id: String?
+    let caller_name: String?
     let created_at: String?
     let duration: Int?
     let ai_summary: String?
@@ -361,10 +362,13 @@ struct VoicemailView: View {
                 ForEach(messages) { m in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Text(m.caller_id ?? "Unknown").font(.headline)
+                            Text(m.caller_name ?? m.caller_id ?? "Unknown").font(.headline)
                             Spacer()
                             Text(String((m.created_at ?? "").prefix(16)).replacingOccurrences(of: "T", with: " "))
                                 .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if let cid = m.caller_id, m.caller_name != nil, !cid.isEmpty {
+                            Text(cid).font(.caption).foregroundStyle(.secondary)
                         }
                         if let summary = m.ai_summary ?? m.transcript, !summary.isEmpty {
                             Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
@@ -409,17 +413,17 @@ struct VoicemailView: View {
 
     private func load() async {
         guard let p = session.provisioning else { return }
-        guard let tok = session.portalToken(for: p) else {
+        guard let tok = session.userToken(for: p) else {
             messages = []
-            status = "The message list isn't available for this line's server yet — use Call Voicemail (*97) below."
+            status = "Signing this line in for messages… pull down to retry, or use Call Voicemail (*97) below."
             return
         }
-        var req = URLRequest(url: p.apiBase.appendingPathComponent("client-portal/voicemails"))
+        var req = URLRequest(url: p.apiBase.appendingPathComponent("user/voicemail"))
         req.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization")
         do {
-            struct Reply: Codable { let voicemails: [VMessage] }
+            struct Reply: Codable { let messages: [VMessage] }
             let (data, _) = try await URLSession.shared.data(for: req)
-            messages = (try JSONDecoder().decode(Reply.self, from: data)).voicemails
+            messages = (try JSONDecoder().decode(Reply.self, from: data)).messages
             status = messages.isEmpty ? "No voicemails." : nil
         } catch {
             status = "Couldn't load messages — pull down to retry."
@@ -428,12 +432,14 @@ struct VoicemailView: View {
 
     private func toggle(_ m: VMessage) {
         if playingId == m.id { player?.pause(); playingId = nil; return }
-        guard let p = session.provisioning, let tok = session.portalToken(for: p),
-              var comps = URLComponents(url: p.apiBase.appendingPathComponent("client-portal/voicemails/\(m.id)/audio"),
-                                        resolvingAgainstBaseURL: false) else { return }
-        comps.queryItems = [URLQueryItem(name: "cptoken", value: tok)]
-        guard let url = comps.url else { return }
-        player = AVPlayer(url: url)
+        guard let p = session.provisioning, let tok = session.userToken(for: p) else { return }
+        let url = p.apiBase.appendingPathComponent("user/voicemail/\(m.id)/audio")
+        // AVURLAsset carries the Bearer header the /user audio endpoint expects
+        // (AVPlayer alone can't set request headers).
+        let asset = AVURLAsset(url: url, options: [
+            "AVURLAssetHTTPHeaderFieldsKey": ["Authorization": "Bearer \(tok)"]
+        ])
+        player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
         player?.play()
         playingId = m.id
     }
