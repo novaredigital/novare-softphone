@@ -349,7 +349,18 @@ struct ContactsView: View {
                 }
             }
             .sheet(item: $card, onDismiss: { Task { await store.load() } }) { t in
-                ContactCardView(contactId: t.contactId).ignoresSafeArea()
+                VStack(spacing: 0) {
+                    HStack {
+                        Button { card = nil } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.title2).foregroundStyle(.secondary)
+                        }
+                        .padding(.leading, 14).padding(.vertical, 8)
+                        Spacer()
+                        Text("Close").font(.caption).foregroundStyle(.clear) // balance
+                    }
+                    ContactCardView(contactId: t.contactId)
+                }
             }
             .task { await store.load() }
             .refreshable { await store.load() }
