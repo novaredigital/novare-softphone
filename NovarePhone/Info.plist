@@ -24,6 +24,8 @@
 	<string>Nováre Phone uses the microphone so you can talk on calls.</string>
 	<key>NSCameraUsageDescription</key>
 	<string>Nováre Phone uses the camera only to scan your sign-in code.</string>
+	<key>NSContactsUsageDescription</key>
+	<string>Nováre Phone shows your contacts so you can call them from your work lines. Contacts never leave your phone.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>voip</string>

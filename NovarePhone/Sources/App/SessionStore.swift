@@ -4,7 +4,7 @@ import Security
 /// Everything the app knows about "its" server — learned at QR sign-in,
 /// stored in the Keychain, erasable at sign-out. Nothing here is compiled in.
 struct Provisioning: Codable, Equatable {
-    let accountName: String     // display name, e.g. "Front Desk"
+    var accountName: String     // display name — user-renamable in Settings
     let username: String        // SIP extension
     let domain: String          // per-client SIP domain, any Nováre server
     let port: Int               // whatever the QR says — never assumed
@@ -12,6 +12,7 @@ struct Provisioning: Codable, Equatable {
     let password: String        // SIP secret
     let apiBase: URL            // client-portal API root for THIS tenant
     let tenantId: Int
+    var number: String?         // the line's public phone number, when the QR carries it
 
     var key: String { "\(username)@\(domain)" }
 }
@@ -95,6 +96,26 @@ final class SessionStore: ObservableObject {
 
     func signOut() async {   // sign out everything
         while !accounts.isEmpty { await signOut(at: accounts.count - 1) }
+    }
+
+    /// Settings: rename a line's label (local only — the server name is unchanged).
+    func rename(at index: Int, to name: String) {
+        guard accounts.indices.contains(index) else { return }
+        let clean = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !clean.isEmpty else { return }
+        accounts[index].accountName = clean
+        try? Self.saveToKeychain(accounts, key: keychainKey)
+    }
+
+    /// Settings: reorder lines. The active (outbound) line follows its account.
+    func move(from source: IndexSet, to destination: Int) {
+        let activeKey = provisioning?.key
+        accounts.move(fromOffsets: source, toOffset: destination)
+        if let k = activeKey, let i = accounts.firstIndex(where: { $0.key == k }) {
+            activeIndex = i
+        }
+        try? Self.saveToKeychain(accounts, key: keychainKey)
+        SipEngine.shared.configure(accounts: accounts, activeIndex: activeIndex)
     }
 
     // MARK: - Client-portal sessions (push-token registry rides this realm)
@@ -197,13 +218,15 @@ extension Provisioning {
             let port: Int?
             let api_base: String
             let tenant_id: Int
+            let caller_id_number: String?
         }
         let w = try JSONDecoder().decode(Wire.self, from: qrJSON)
         guard let api = URL(string: w.api_base) else { throw NSError(domain: "qr", code: 1) }
         self.init(accountName: w.account_name ?? w.username,
                   username: w.username, domain: w.domain,
                   port: w.port ?? 5060, transport: w.transport ?? "UDP",
-                  password: w.password, apiBase: api, tenantId: w.tenant_id)
+                  password: w.password, apiBase: api, tenantId: w.tenant_id,
+                  number: w.caller_id_number)
     }
 }
 

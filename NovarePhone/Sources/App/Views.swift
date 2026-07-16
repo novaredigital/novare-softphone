@@ -10,9 +10,10 @@ struct SignInView: View {
     var body: some View {
         VStack(spacing: 24) {
             Spacer()
-            Image(systemName: "phone.circle.fill")
-                .font(.system(size: 88))
-                .foregroundStyle(Color(red: 0.784, green: 0.063, blue: 0.18)) // Nováre red
+            Image("NovareTelecomLogo")
+                .resizable().scaledToFit()
+                .frame(maxWidth: 260)
+                .padding(.horizontal, 24)
             Text("Nováre Phone")
                 .font(.largeTitle).bold()
             Text("Scan the sign-in code from your\nMy Phone portal to get started.")
@@ -54,10 +55,11 @@ struct MainTabView: View {
 
     var body: some View {
         TabView {
-            DialerView().tabItem { Label("Keypad", systemImage: "circle.grid.3x3.fill") }
+            FavoritesView().tabItem { Label("Favorites", systemImage: "star.fill") }
             RecentsView().tabItem { Label("Recents", systemImage: "clock.fill") }
+            ContactsView().tabItem { Label("Contacts", systemImage: "person.crop.circle") }
+            DialerView().tabItem { Label("Keypad", systemImage: "circle.grid.3x3.fill") }
             VoicemailView().tabItem { Label("Voicemail", systemImage: "recordingtape") }
-            SettingsView().tabItem { Label("Settings", systemImage: "gearshape.fill") }
         }
         .fullScreenCover(isPresented: Binding(get: { call.isActive }, set: { if !$0 { } })) {
             InCallView().environmentObject(call)
@@ -167,10 +169,18 @@ private struct CallControlButton: View {
 struct DialerView: View {
     @EnvironmentObject var session: SessionStore
     @State private var number = ""
+    @State private var showSettings = false
     private let keys = ["1","2","3","4","5","6","7","8","9","*","0","#"]
 
     var body: some View {
         VStack(spacing: 12) {
+            HStack {
+                Spacer()
+                Button { showSettings = true } label: {
+                    Image(systemName: "gearshape.fill").font(.title3)
+                }
+            }
+            .padding(.horizontal)
             if session.accounts.count > 1 {
                 Menu {
                     ForEach(session.accounts.indices, id: \.self) { i in
@@ -219,7 +229,11 @@ struct DialerView: View {
                 }.disabled(number.isEmpty)
             }
             Spacer()
-        }.padding()
+        }
+        .padding()
+        .sheet(isPresented: $showSettings) {
+            SettingsView().environmentObject(session)
+        }
     }
 }
 
@@ -376,6 +390,8 @@ struct SettingsView: View {
     @EnvironmentObject var session: SessionStore
     @State private var showScanner = false
     @State private var signOutIndex: Int?
+    @State private var renameIndex: Int?
+    @State private var renameText = ""
 
     var body: some View {
         NavigationStack {
@@ -392,14 +408,20 @@ struct SettingsView: View {
                                         .background(Capsule().fill(Color.accentColor.opacity(0.15)))
                                 }
                             }
-                            Text(a.domain).font(.caption).foregroundStyle(.secondary)
+                            Text([a.number, a.domain].compactMap { $0 }.joined(separator: " · "))
+                                .font(.caption).foregroundStyle(.secondary)
                         }
                         .contentShape(Rectangle())
                         .onTapGesture { session.activeIndex = i }
                         .swipeActions {
                             Button("Sign Out", role: .destructive) { signOutIndex = i }
+                            Button("Rename") {
+                                renameText = a.accountName
+                                renameIndex = i
+                            }.tint(.blue)
                         }
                     }
+                    .onMove { session.move(from: $0, to: $1) }
                     Button {
                         showScanner = true
                     } label: {
@@ -407,15 +429,19 @@ struct SettingsView: View {
                     }
                 }
                 Section {
-                    Text("Tap a line to make it the outbound line. Swipe a line left to sign it out. Incoming calls ring on every line.")
+                    Text("Tap a line to make it the outbound line. Swipe left to rename or sign out. Use Edit (top right) to drag lines into your preferred order. Incoming calls ring on every line.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
-                    Text("Nováre Telecom, a division of Novare Digital Corp")
-                    Link("novaretelecom.com", destination: URL(string: "https://novaretelecom.com")!)
+                    NavigationLink {
+                        AboutView()
+                    } label: {
+                        Label("About Nóvare Telecom", systemImage: "info.circle")
+                    }
                 } header: { Text("About") }
             }
             .navigationTitle("Settings")
+            .toolbar { if session.accounts.count > 1 { EditButton() } }
             .sheet(isPresented: $showScanner) {
                 QRScannerView { payload in
                     showScanner = false
@@ -429,7 +455,66 @@ struct SettingsView: View {
                     signOutIndex = nil
                 }
             }
+            .alert("Rename Line", isPresented: Binding(
+                get: { renameIndex != nil }, set: { if !$0 { renameIndex = nil } })) {
+                TextField("Line name", text: $renameText)
+                Button("Save") {
+                    if let i = renameIndex { session.rename(at: i, to: renameText) }
+                    renameIndex = nil
+                }
+                Button("Cancel", role: .cancel) { renameIndex = nil }
+            } message: {
+                Text("Shown on the keypad line picker and this list. You can put the line's phone number here too.")
+            }
         }
+    }
+}
+
+// MARK: - About
+
+struct AboutView: View {
+    private var version: String {
+        let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0"
+        let b = Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"
+        return "\(v) (\(b))"
+    }
+
+    var body: some View {
+        List {
+            Section {
+                VStack(spacing: 14) {
+                    Image("NovareTelecomLogo")
+                        .resizable().scaledToFit()
+                        .frame(maxWidth: 240)
+                    Text("Nóvare Telecom\na division of Novare Digital Corp")
+                        .font(.subheadline).bold()
+                        .multilineTextAlignment(.center)
+                    Text("Business phone systems and telecom services\nChattanooga, Tennessee")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .multilineTextAlignment(.center)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 10)
+            }
+            Section {
+                Link(destination: URL(string: "https://novaretelecom.com")!) {
+                    Label("novaretelecom.com", systemImage: "globe")
+                }
+                Button {
+                    CallManager.shared.startOutgoingCall(to: "4235915000")
+                } label: {
+                    Label("(423) 591-5000", systemImage: "phone.fill")
+                }
+            } header: { Text("Contact") }
+            Section {
+                LabeledContent("App version", value: version)
+                Link(destination: URL(string: "https://github.com/novaredigital/novare-softphone")!) {
+                    Label("Open source — AGPLv3 · source code", systemImage: "chevron.left.forwardslash.chevron.right")
+                }
+            } header: { Text("This app") }
+        }
+        .navigationTitle("About")
     }
 }
 

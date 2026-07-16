@@ -2,6 +2,7 @@ import Foundation
 import linphonesw
 import AVFAudio
 import Combine
+import Network
 
 /// Published call state the in-call screen renders. Updated only from
 /// SipEngine's delegate transitions so it always mirrors SIP reality.
@@ -56,6 +57,8 @@ final class SipEngine {
     private var coreDelegate: CoreDelegate?
     private var currentCall: Call?
     private var linAccounts: [Account] = []
+    private var pathMonitor: NWPathMonitor?
+    private var lastPathKey: String?
 
     private(set) var isConfigured = false
     var isRegistered: Bool {
@@ -91,9 +94,11 @@ final class SipEngine {
                 // Delegate: bridge SIP call state -> CallKit (CallManager).
                 let delegate = EngineCoreDelegate(engine: self)
                 c.addDelegate(delegate: delegate)
+                c.keepAliveEnabled = true
                 try c.start()
                 self.coreDelegate = delegate
                 self.core = c
+                startNetworkMonitor()
             }
             guard let core = core else { return }
 
@@ -143,7 +148,37 @@ final class SipEngine {
         log("ensureRegistered()")
     }
 
+    /// WiFi ⇄ cellular handoff. Without this the Core's sockets stay bound to
+    /// the network the app registered on — away from home, dialing goes into
+    /// a dead socket until relaunch. Toggling networkReachable forces a
+    /// rebind + fresh REGISTER on the new path.
+    private func startNetworkMonitor() {
+        pathMonitor?.cancel()
+        let monitor = NWPathMonitor()
+        monitor.pathUpdateHandler = { [weak self] path in
+            guard let self = self else { return }
+            let key = path.availableInterfaces.map(\.name).joined(separator: ",")
+                + "|" + String(describing: path.status)
+            guard key != self.lastPathKey else { return }
+            let first = self.lastPathKey == nil
+            self.lastPathKey = key
+            guard !first else { return }   // initial callback = current state, no rebind needed
+            DispatchQueue.main.async {
+                guard let core = self.core else { return }
+                self.log("network path changed (\(key)) — rebinding")
+                core.networkReachable = false
+                core.networkReachable = true
+                core.refreshRegisters()
+            }
+        }
+        monitor.start(queue: DispatchQueue.global(qos: .utility))
+        pathMonitor = monitor
+    }
+
     func shutdown() {
+        pathMonitor?.cancel()
+        pathMonitor = nil
+        lastPathKey = nil
         core?.stop()
         core = nil
         coreDelegate = nil

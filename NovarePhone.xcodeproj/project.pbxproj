@@ -7,6 +7,7 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		17517ED26A32BD920CA5E3FD /* ContactsAndFavorites.swift in Sources */ = {isa = PBXBuildFile; fileRef = 26F567AA5C1C5F7D2C2D87A4 /* ContactsAndFavorites.swift */; };
 		24CF14CAC54B62FDF626EB48 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81E51DF90B7C5399D47D0D07 /* Views.swift */; };
 		2C327F66D920366FF5644D01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5DFA31AF26395F64D98DF4C6 /* Assets.xcassets */; };
 		4505D0B7FE3A7D9185E70701 /* NovarePhoneApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29ED53C5B0365249F436ACC7 /* NovarePhoneApp.swift */; };
@@ -19,6 +20,7 @@
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
+		26F567AA5C1C5F7D2C2D87A4 /* ContactsAndFavorites.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsAndFavorites.swift; sourceTree = "<group>"; };
 		29ED53C5B0365249F436ACC7 /* NovarePhoneApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NovarePhoneApp.swift; sourceTree = "<group>"; };
 		42D61289447EC7B31B41547D /* CallManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallManager.swift; sourceTree = "<group>"; };
 		5DFA31AF26395F64D98DF4C6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -65,6 +67,7 @@
 				5FE6B64BE1B6B684714147BC /* AppDelegate.swift */,
 				9FF830A1A03DD302508BFFF9 /* CallHistory.swift */,
 				42D61289447EC7B31B41547D /* CallManager.swift */,
+				26F567AA5C1C5F7D2C2D87A4 /* ContactsAndFavorites.swift */,
 				29ED53C5B0365249F436ACC7 /* NovarePhoneApp.swift */,
 				AED1EE6011B9A0662C26A046 /* SessionStore.swift */,
 				FE0BE095408718A35EFAF55A /* SipEngine.swift */,
@@ -168,6 +171,7 @@
 				7EB341DA4C0BB8963AD6CA2B /* AppDelegate.swift in Sources */,
 				73F535BE5C55DD6990C9EF7A /* CallHistory.swift in Sources */,
 				9A42BDA143189500E51536FF /* CallManager.swift in Sources */,
+				17517ED26A32BD920CA5E3FD /* ContactsAndFavorites.swift in Sources */,
 				4505D0B7FE3A7D9185E70701 /* NovarePhoneApp.swift in Sources */,
 				C856907C78333D2CAC0F01FB /* SessionStore.swift in Sources */,
 				B1931DA909921B8CCE457E8E /* SipEngine.swift in Sources */,
