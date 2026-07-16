@@ -73,6 +73,11 @@ struct InCallView: View {
     @EnvironmentObject var call: CallSession
     @State private var showKeypad = false
     @State private var dtmfEntered = ""
+    @State private var isRecording = false
+    @State private var promptNumber = ""
+    @State private var prompting: CallPrompt?
+
+    enum CallPrompt { case transfer, addCall }
 
     private var stateText: String {
         switch call.phase {
@@ -117,20 +122,55 @@ struct InCallView: View {
 
             Spacer()
 
-            HStack(spacing: 34) {
-                CallControlButton(icon: call.isMuted ? "mic.slash.fill" : "mic.fill",
-                                  label: "Mute", active: call.isMuted) {
-                    call.isMuted.toggle()
-                    CallManager.shared.setMuted(call.isMuted)
+            VStack(spacing: 16) {
+                HStack(spacing: 34) {
+                    CallControlButton(icon: call.isMuted ? "mic.slash.fill" : "mic.fill",
+                                      label: "Mute", active: call.isMuted) {
+                        call.isMuted.toggle()
+                        CallManager.shared.setMuted(call.isMuted)
+                    }
+                    CallControlButton(icon: "circle.grid.3x3.fill", label: "Keypad", active: showKeypad) {
+                        showKeypad.toggle()
+                    }
+                    CallControlButton(icon: "speaker.wave.2.fill", label: "Speaker", active: call.isSpeaker) {
+                        call.isSpeaker.toggle()
+                        try? AVAudioSession.sharedInstance()
+                            .overrideOutputAudioPort(call.isSpeaker ? .speaker : .none)
+                    }
                 }
-                CallControlButton(icon: "circle.grid.3x3.fill", label: "Keypad", active: showKeypad) {
-                    showKeypad.toggle()
+                HStack(spacing: 34) {
+                    CallControlButton(icon: "arrow.uturn.right", label: "Transfer") {
+                        promptNumber = ""; prompting = .transfer
+                    }
+                    CallControlButton(icon: SipEngine.shared.hasMultipleCalls ? "arrow.triangle.merge" : "plus",
+                                      label: SipEngine.shared.hasMultipleCalls ? "Merge" : "Add Call") {
+                        if SipEngine.shared.hasMultipleCalls {
+                            SipEngine.shared.mergeCalls()
+                        } else {
+                            promptNumber = ""; prompting = .addCall
+                        }
+                    }
+                    CallControlButton(icon: "record.circle", label: isRecording ? "Stop Rec" : "Record",
+                                      active: isRecording) {
+                        SipEngine.shared.toggleRecording()
+                        isRecording = SipEngine.shared.isRecording
+                    }
                 }
-                CallControlButton(icon: "speaker.wave.2.fill", label: "Speaker", active: call.isSpeaker) {
-                    call.isSpeaker.toggle()
-                    try? AVAudioSession.sharedInstance()
-                        .overrideOutputAudioPort(call.isSpeaker ? .speaker : .none)
+            }
+            .alert(prompting == .transfer ? "Transfer to" : "Add call to",
+                   isPresented: Binding(get: { prompting != nil },
+                                        set: { if !$0 { prompting = nil } })) {
+                TextField("Number or extension", text: $promptNumber)
+                    .keyboardType(.phonePad)
+                Button(prompting == .transfer ? "Transfer" : "Call") {
+                    let n = promptNumber.filter { "0123456789+*#".contains($0) }
+                    if !n.isEmpty {
+                        if prompting == .transfer { SipEngine.shared.transferCall(to: n) }
+                        else { SipEngine.shared.addCall(to: n) }
+                    }
+                    prompting = nil
                 }
+                Button("Cancel", role: .cancel) { prompting = nil }
             }
 
             Button {
@@ -170,17 +210,30 @@ struct DialerView: View {
     @EnvironmentObject var session: SessionStore
     @State private var number = ""
     @State private var showSettings = false
+    @State private var dnd = SipEngine.shared.dndEnabled
     private let keys = ["1","2","3","4","5","6","7","8","9","*","0","#"]
 
     var body: some View {
         VStack(spacing: 12) {
             HStack {
+                Button { dnd.toggle(); SipEngine.shared.dndEnabled = dnd } label: {
+                    Image(systemName: dnd ? "bell.slash.fill" : "bell.fill")
+                        .font(.title3)
+                        .foregroundStyle(dnd ? .red : .accentColor)
+                }
+                if dnd {
+                    Text("Do Not Disturb").font(.caption).foregroundStyle(.red)
+                }
                 Spacer()
                 Button { showSettings = true } label: {
                     Image(systemName: "gearshape.fill").font(.title3)
                 }
             }
             .padding(.horizontal)
+            Image("NovareTelecomLogo")
+                .resizable().scaledToFit()
+                .frame(maxWidth: 180)
+                .padding(.top, 2)
             if session.accounts.count > 1 {
                 Menu {
                     ForEach(session.accounts.indices, id: \.self) { i in

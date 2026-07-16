@@ -198,14 +198,23 @@ final class SipEngine {
             }
             let params = try core.createCallParams(call: nil)
             params.mediaEncryption = .None
+            params.recordFile = Self.newRecordPath()   // armed; records only if the user taps Record
             currentCall = core.inviteAddressWithParams(addr: addr, params: params)
             log("placeCall(\(number))")
         } catch { log("placeCall failed: \(error)") }
     }
 
     func answerCall() {
-        do { try currentCall?.accept(); log("answerCall()") }
-        catch { log("answer failed: \(error)") }
+        guard let core = core, let call = currentCall else { return }
+        do {
+            let params = try core.createCallParams(call: call)
+            params.recordFile = Self.newRecordPath()   // armed for the Record button
+            try call.acceptWithParams(params: params)
+            log("answerCall()")
+        } catch {
+            do { try call.accept(); log("answerCall() (plain)") }
+            catch { log("answer failed: \(error)") }
+        }
     }
 
     func terminateAllCalls() {
@@ -235,12 +244,64 @@ final class SipEngine {
     /// Voicemail one-touch — *97 on every Nováre PBX.
     func dialVoicemail() { placeCall(to: "*97") }
 
+    // MARK: - Transfer / conference / recording / DND
+
+    /// App-level Do Not Disturb: incoming calls are declined busy (the PBX
+    /// then follows its busy path — usually voicemail). No ring, no screen.
+    var dndEnabled = false
+
+    /// Blind transfer the live call to another number (REFER).
+    func transferCall(to number: String) {
+        guard let core = core, let call = currentCall else { return }
+        guard let addr = core.interpretUrl(url: "sip:\(number)@\(core.defaultAccount?.params?.domain ?? "")", applyInternationalPrefix: false) else { return }
+        do { try call.transferTo(referTo: addr); log("transfer -> \(number)") }
+        catch { log("transfer failed: \(error)") }
+    }
+
+    /// Second call for a 3-way: current call auto-holds, new call dials.
+    func addCall(to number: String) {
+        placeCall(to: number)   // liblinphone pauses the active call automatically
+    }
+
+    /// Merge everything into a local 3-way conference.
+    func mergeCalls() {
+        guard let core = core, core.callsNb > 1 else { return }
+        do { try core.addAllToConference(); log("merged \(core.callsNb) calls") }
+        catch { log("merge failed: \(error)") }
+    }
+
+    var hasMultipleCalls: Bool { (core?.callsNb ?? 0) > 1 }
+
+    /// Start/stop recording the live call. Files land in Documents (visible
+    /// in the iOS Files app) as novare-call-<timestamp>.wav.
+    private(set) var isRecording = false
+    func toggleRecording() {
+        guard let call = currentCall else { return }
+        if isRecording { call.stopRecording(); isRecording = false; log("recording stopped") }
+        else { call.startRecording(); isRecording = true; log("recording started") }
+    }
+
+    fileprivate static func newRecordPath() -> String {
+        let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
+        return FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("novare-call-\(stamp).wav").path
+    }
+
     // MARK: - Delegate callbacks (called by CoreDelegateStub)
 
     fileprivate func handleCallState(_ call: Call, _ state: Call.State) {
         let remote = call.remoteAddress?.username ?? "Unknown"
         switch state {
         case .IncomingReceived:
+            if dndEnabled {
+                try? call.decline(reason: Reason.Busy)
+                log("DND: declined incoming from \(remote)")
+                Task { @MainActor in
+                    CallHistory.shared.add(number: remote, direction: .incoming,
+                                           missed: true, start: Date(), duration: 0)
+                }
+                return
+            }
             currentCall = call
             let name = call.remoteAddress?.displayName ?? remote
             Task { @MainActor in
