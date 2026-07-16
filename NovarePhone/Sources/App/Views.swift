@@ -268,19 +268,24 @@ struct DialerView: View {
                 }
             }
             .frame(width: 320)
-            HStack(spacing: 34) {
+            // Bottom row rides the same grid as the keys: call under the 0,
+            // backspace under the #.
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(102)), count: 3), spacing: 12) {
+                Color.clear.frame(width: 82, height: 82)
                 Button {
                     CallManager.shared.startOutgoingCall(to: number)
                     number = ""   // keypad is blank again after the call
                 } label: {
                     Image(systemName: "phone.fill").font(.title)
-                        .frame(width: 72, height: 72)
+                        .frame(width: 82, height: 82)
                         .background(Circle().fill(.green)).foregroundStyle(.white)
                 }.disabled(number.isEmpty)
                 Button { if !number.isEmpty { number.removeLast() } } label: {
                     Image(systemName: "delete.left").font(.title2)
+                        .frame(width: 82, height: 82)
                 }.disabled(number.isEmpty)
             }
+            .frame(width: 320)
             Spacer()
         }
         .padding()
