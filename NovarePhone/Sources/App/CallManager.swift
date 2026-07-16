@@ -58,8 +58,22 @@ final class CallManager: NSObject, CXProviderDelegate {
     }
 
     func endActiveCall() {
-        guard let uuid = activeCallUUID else { return }
+        guard let uuid = activeCallUUID else {
+            // No CallKit call to unwind (e.g. UI hang-up raced the report) —
+            // end at the SIP layer so the user is never stuck in a call.
+            SipEngine.shared.terminateAllCalls()
+            return
+        }
         callController.request(CXTransaction(action: CXEndCallAction(call: uuid))) { _ in }
+    }
+
+    /// In-call screen mute button — go through CallKit so the system stays in
+    /// sync; fall back straight to the engine when there is no CallKit call.
+    func setMuted(_ muted: Bool) {
+        guard let uuid = activeCallUUID else { SipEngine.shared.setMuted(muted); return }
+        callController.request(CXTransaction(action: CXSetMutedCallAction(call: uuid, muted: muted))) { err in
+            if err != nil { SipEngine.shared.setMuted(muted) }
+        }
     }
 
     // MARK: - CXProviderDelegate (system → us)

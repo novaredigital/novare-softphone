@@ -50,12 +50,116 @@ struct SignInView: View {
 // MARK: - Main tabs
 
 struct MainTabView: View {
+    @StateObject private var call = CallSession.shared
+
     var body: some View {
         TabView {
             DialerView().tabItem { Label("Keypad", systemImage: "circle.grid.3x3.fill") }
             RecentsView().tabItem { Label("Recents", systemImage: "clock.fill") }
             VoicemailView().tabItem { Label("Voicemail", systemImage: "recordingtape") }
             SettingsView().tabItem { Label("Settings", systemImage: "gearshape.fill") }
+        }
+        .fullScreenCover(isPresented: Binding(get: { call.isActive }, set: { if !$0 { } })) {
+            InCallView().environmentObject(call)
+        }
+    }
+}
+
+// MARK: - In-call screen (outgoing VoIP calls get NO system UI — this is it)
+
+struct InCallView: View {
+    @EnvironmentObject var call: CallSession
+    @State private var showKeypad = false
+    @State private var dtmfEntered = ""
+
+    private var stateText: String {
+        switch call.phase {
+        case .idle: return ""
+        case .dialing: return "Calling…"
+        case .ringing: return "Ringing…"
+        case .incoming: return "Incoming call"
+        case .connected: return "" // timer shown instead
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 18) {
+            Spacer().frame(height: 40)
+            Text(call.remote)
+                .font(.system(size: 36, weight: .medium, design: .rounded))
+                .lineLimit(1).minimumScaleFactor(0.5)
+            Group {
+                if case .connected(let start) = call.phase {
+                    Text(start, style: .timer).monospacedDigit()
+                } else {
+                    Text(stateText)
+                }
+            }
+            .font(.title3).foregroundStyle(.secondary)
+
+            if showKeypad {
+                Text(dtmfEntered.isEmpty ? " " : dtmfEntered)
+                    .font(.title2.monospaced()).foregroundStyle(.secondary).lineLimit(1)
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 12) {
+                    ForEach(["1","2","3","4","5","6","7","8","9","*","0","#"], id: \.self) { k in
+                        Button {
+                            dtmfEntered.append(k)
+                            SipEngine.shared.sendDTMF(k)
+                        } label: {
+                            Text(k).font(.title2).frame(width: 64, height: 64)
+                                .background(Circle().fill(Color(.secondarySystemBackground)))
+                        }.buttonStyle(.plain)
+                    }
+                }.padding(.horizontal, 40)
+            }
+
+            Spacer()
+
+            HStack(spacing: 34) {
+                CallControlButton(icon: call.isMuted ? "mic.slash.fill" : "mic.fill",
+                                  label: "Mute", active: call.isMuted) {
+                    call.isMuted.toggle()
+                    CallManager.shared.setMuted(call.isMuted)
+                }
+                CallControlButton(icon: "circle.grid.3x3.fill", label: "Keypad", active: showKeypad) {
+                    showKeypad.toggle()
+                }
+                CallControlButton(icon: "speaker.wave.2.fill", label: "Speaker", active: call.isSpeaker) {
+                    call.isSpeaker.toggle()
+                    try? AVAudioSession.sharedInstance()
+                        .overrideOutputAudioPort(call.isSpeaker ? .speaker : .none)
+                }
+            }
+
+            Button {
+                CallManager.shared.endActiveCall()
+            } label: {
+                Image(systemName: "phone.down.fill").font(.title)
+                    .frame(width: 76, height: 76)
+                    .background(Circle().fill(.red)).foregroundStyle(.white)
+            }
+            .padding(.bottom, 44)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color(.systemBackground))
+    }
+}
+
+private struct CallControlButton: View {
+    let icon: String
+    let label: String
+    var active: Bool = false
+    let action: () -> Void
+
+    var body: some View {
+        VStack(spacing: 6) {
+            Button(action: action) {
+                Image(systemName: icon).font(.title2)
+                    .frame(width: 64, height: 64)
+                    .background(Circle().fill(active ? Color.accentColor : Color(.secondarySystemBackground)))
+                    .foregroundStyle(active ? .white : .primary)
+            }.buttonStyle(.plain)
+            Text(label).font(.caption).foregroundStyle(.secondary)
         }
     }
 }

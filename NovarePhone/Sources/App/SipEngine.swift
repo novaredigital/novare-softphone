@@ -1,6 +1,22 @@
 import Foundation
 import linphonesw
 import AVFAudio
+import Combine
+
+/// Published call state the in-call screen renders. Updated only from
+/// SipEngine's delegate transitions so it always mirrors SIP reality.
+@MainActor
+final class CallSession: ObservableObject {
+    static let shared = CallSession()
+    enum Phase: Equatable { case idle, dialing, ringing, incoming, connected(Date) }
+    @Published var phase: Phase = .idle
+    @Published var remote: String = ""
+    @Published var isMuted = false
+    @Published var isSpeaker = false
+    var isActive: Bool { phase != .idle }
+
+    fileprivate func reset() { phase = .idle; remote = ""; isMuted = false; isSpeaker = false }
+}
 
 /// Real SIP engine on liblinphone (linphonesw). Kept behind this seam so the
 /// UI never touches the SDK directly and the engine could be swapped (license
@@ -142,15 +158,33 @@ final class SipEngine {
     // MARK: - Delegate callbacks (called by CoreDelegateStub)
 
     fileprivate func handleCallState(_ call: Call, _ state: Call.State) {
+        let remote = call.remoteAddress?.username ?? "Unknown"
         switch state {
         case .IncomingReceived:
             currentCall = call
-            let from = call.remoteAddress?.username ?? "Unknown"
-            let name = call.remoteAddress?.displayName ?? from
-            onIncomingCall?(from, name)
+            let name = call.remoteAddress?.displayName ?? remote
+            Task { @MainActor in
+                CallSession.shared.remote = remote
+                CallSession.shared.phase = .incoming
+            }
+            onIncomingCall?(remote, name)
+        case .OutgoingInit, .OutgoingProgress:
+            currentCall = call
+            Task { @MainActor in
+                CallSession.shared.remote = remote
+                CallSession.shared.phase = .dialing
+            }
+        case .OutgoingRinging:
+            Task { @MainActor in CallSession.shared.phase = .ringing }
         case .Connected, .StreamsRunning:
+            Task { @MainActor in
+                if case .connected = CallSession.shared.phase {} else {
+                    CallSession.shared.phase = .connected(Date())
+                }
+            }
             onCallConnected?()
         case .End, .Error, .Released:
+            Task { @MainActor in CallSession.shared.reset() }
             onCallEnded?()
             if call === currentCall { currentCall = nil }
         default:
