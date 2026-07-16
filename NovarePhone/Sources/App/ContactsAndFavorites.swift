@@ -17,6 +17,15 @@ final class ContactsStore: ObservableObject {
     @Published private(set) var contacts: [PhoneContact] = []
     @Published private(set) var denied = false
 
+    /// number (digits only, last 10) → contact display name. Rebuilt on load
+    /// so Recents/Favorites show the CURRENT name after a contact edit.
+    private var nameByNumber: [String: String] = [:]
+    private func digits(_ s: String) -> String { String(s.filter(\.isNumber).suffix(10)) }
+    func name(forNumber number: String) -> String? {
+        let k = digits(number)
+        return k.isEmpty ? nil : nameByNumber[k]
+    }
+
     func load() async {
         let store = CNContactStore()
         let status = CNContactStore.authorizationStatus(for: .contacts)
@@ -48,6 +57,14 @@ final class ContactsStore: ObservableObject {
         }.value
         out = fetched
         contacts = out
+        var map: [String: String] = [:]
+        for c in out {
+            for n in c.numbers {
+                let k = digits(n.number)
+                if !k.isEmpty { map[k] = c.name }
+            }
+        }
+        nameByNumber = map
     }
 }
 
@@ -176,6 +193,7 @@ extension FavoritesStore {
 
 struct FavoritesView: View {
     @StateObject private var favs = FavoritesStore.shared
+    @StateObject private var contacts = ContactsStore.shared
 
     var body: some View {
         NavigationStack {
@@ -185,12 +203,15 @@ struct FavoritesView: View {
                         .foregroundStyle(.secondary)
                 }
                 ForEach(favs.favorites) { f in
+                    // Prefer the CURRENT contact name (so a rename in Contacts
+                    // shows here); fall back to the saved snapshot.
+                    let display = contacts.name(forNumber: f.number) ?? f.name
                     Button {
                         CallManager.shared.startOutgoingCall(to: dialable(f.number))
                     } label: {
                         HStack {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(f.name).font(.headline)
+                                Text(display).font(.headline)
                                 Text(f.number).font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -204,8 +225,8 @@ struct FavoritesView: View {
             .navigationTitle("Favorites")
             .toolbar { if !favs.favorites.isEmpty { EditButton() } }
             .task {
-                await ContactsStore.shared.load()
-                favs.seedFromContactsIfNeeded(ContactsStore.shared.contacts)
+                await contacts.load()
+                favs.seedFromContactsIfNeeded(contacts.contacts)
             }
         }
     }
@@ -225,12 +246,27 @@ struct ContactCardView: UIViewControllerRepresentable {
     func makeUIViewController(context: Context) -> UINavigationController {
         let store = CNContactStore()
         let vc: CNContactViewController
-        if let id = contactId,
-           let full = try? store.unifiedContact(withIdentifier: id,
-                                                keysToFetch: [CNContactViewController.descriptorForRequiredKeys()]) {
-            vc = CNContactViewController(for: full)
-            vc.allowsEditing = true
-            vc.allowsActions = false   // our rows handle dialing; card is for editing
+        if let id = contactId {
+            // MUST fetch with descriptorForRequiredKeys() as ONE combined
+            // descriptor set — a too-thin fetch renders the card with no
+            // editable fields (Mark's "nothing to edit"). Merge it with the
+            // common editable keys so every field shows.
+            let keys: [CNKeyDescriptor] = [
+                CNContactViewController.descriptorForRequiredKeys(),
+                CNContactGivenNameKey as CNKeyDescriptor,
+                CNContactFamilyNameKey as CNKeyDescriptor,
+                CNContactOrganizationNameKey as CNKeyDescriptor,
+                CNContactPhoneNumbersKey as CNKeyDescriptor,
+                CNContactEmailAddressesKey as CNKeyDescriptor,
+                CNContactPostalAddressesKey as CNKeyDescriptor,
+            ]
+            if let full = try? store.unifiedContact(withIdentifier: id, keysToFetch: keys) {
+                vc = CNContactViewController(for: full)
+                vc.allowsEditing = true
+                vc.allowsActions = true
+            } else {
+                vc = CNContactViewController(forNewContact: nil)
+            }
         } else {
             vc = CNContactViewController(forNewContact: nil)
         }

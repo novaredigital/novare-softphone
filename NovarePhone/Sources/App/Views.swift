@@ -292,6 +292,8 @@ struct DialerView: View {
 
 struct RecentsView: View {
     @StateObject private var history = CallHistory.shared
+    @StateObject private var contacts = ContactsStore.shared
+    @State private var showNumbers = false   // toggle name ⇄ number for the whole list
 
     var body: some View {
         NavigationStack {
@@ -300,6 +302,11 @@ struct RecentsView: View {
                     Text("No calls yet.").foregroundStyle(.secondary)
                 }
                 ForEach(history.records) { r in
+                    let name = contacts.name(forNumber: r.number)
+                    // Primary line: contact name if known (unless toggled to numbers);
+                    // secondary line shows the other value so both are always available.
+                    let primary = (showNumbers ? nil : name) ?? r.number
+                    let secondary: String? = (showNumbers ? name : (name != nil ? r.number : nil))
                     Button {
                         CallManager.shared.startOutgoingCall(to: r.number)
                     } label: {
@@ -308,9 +315,9 @@ struct RecentsView: View {
                                   ? "phone.arrow.down.left.fill" : "phone.arrow.up.right.fill")
                                 .foregroundStyle(r.missed ? .red : .green)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(r.number)
-                                    .foregroundStyle(r.missed ? .red : .primary)
-                                Text(r.start.formatted(date: .abbreviated, time: .shortened))
+                                Text(primary).foregroundStyle(r.missed ? .red : .primary)
+                                Text([secondary, r.start.formatted(date: .abbreviated, time: .shortened)]
+                                        .compactMap { $0 }.joined(separator: " · "))
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                             Spacer()
@@ -326,10 +333,14 @@ struct RecentsView: View {
             }
             .navigationTitle("Recents")
             .toolbar {
-                if !history.records.isEmpty {
-                    Button("Clear") { history.clear() }
+                ToolbarItem(placement: .topBarLeading) {
+                    Button(showNumbers ? "Names" : "Numbers") { showNumbers.toggle() }
+                }
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !history.records.isEmpty { Button("Clear") { history.clear() } }
                 }
             }
+            .task { await contacts.load() }
         }
     }
 }
