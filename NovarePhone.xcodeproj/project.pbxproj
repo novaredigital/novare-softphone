@@ -10,6 +10,7 @@
 		24CF14CAC54B62FDF626EB48 /* Views.swift in Sources */ = {isa = PBXBuildFile; fileRef = 81E51DF90B7C5399D47D0D07 /* Views.swift */; };
 		2C327F66D920366FF5644D01 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 5DFA31AF26395F64D98DF4C6 /* Assets.xcassets */; };
 		4505D0B7FE3A7D9185E70701 /* NovarePhoneApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 29ED53C5B0365249F436ACC7 /* NovarePhoneApp.swift */; };
+		73F535BE5C55DD6990C9EF7A /* CallHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FF830A1A03DD302508BFFF9 /* CallHistory.swift */; };
 		7EB341DA4C0BB8963AD6CA2B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FE6B64BE1B6B684714147BC /* AppDelegate.swift */; };
 		9A42BDA143189500E51536FF /* CallManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D61289447EC7B31B41547D /* CallManager.swift */; };
 		B1931DA909921B8CCE457E8E /* SipEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0BE095408718A35EFAF55A /* SipEngine.swift */; };
@@ -23,6 +24,7 @@
 		5DFA31AF26395F64D98DF4C6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		5FE6B64BE1B6B684714147BC /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
 		81E51DF90B7C5399D47D0D07 /* Views.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Views.swift; sourceTree = "<group>"; };
+		9FF830A1A03DD302508BFFF9 /* CallHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallHistory.swift; sourceTree = "<group>"; };
 		AB44FA0FDC0839B7E6FB4283 /* NovarePhone.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = NovarePhone.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AED1EE6011B9A0662C26A046 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
 		FE0BE095408718A35EFAF55A /* SipEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SipEngine.swift; sourceTree = "<group>"; };
@@ -61,6 +63,7 @@
 			isa = PBXGroup;
 			children = (
 				5FE6B64BE1B6B684714147BC /* AppDelegate.swift */,
+				9FF830A1A03DD302508BFFF9 /* CallHistory.swift */,
 				42D61289447EC7B31B41547D /* CallManager.swift */,
 				29ED53C5B0365249F436ACC7 /* NovarePhoneApp.swift */,
 				AED1EE6011B9A0662C26A046 /* SessionStore.swift */,
@@ -163,6 +166,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				7EB341DA4C0BB8963AD6CA2B /* AppDelegate.swift in Sources */,
+				73F535BE5C55DD6990C9EF7A /* CallHistory.swift in Sources */,
 				9A42BDA143189500E51536FF /* CallManager.swift in Sources */,
 				4505D0B7FE3A7D9185E70701 /* NovarePhoneApp.swift in Sources */,
 				C856907C78333D2CAC0F01FB /* SessionStore.swift in Sources */,

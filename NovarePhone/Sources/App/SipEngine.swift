@@ -15,7 +15,29 @@ final class CallSession: ObservableObject {
     @Published var isSpeaker = false
     var isActive: Bool { phase != .idle }
 
-    fileprivate func reset() { phase = .idle; remote = ""; isMuted = false; isSpeaker = false }
+    // Recents bookkeeping — set by the SIP transitions below.
+    fileprivate var direction: CallRecord.Direction = .outgoing
+    fileprivate var beganAt: Date?
+    fileprivate var connectedAt: Date?
+
+    fileprivate func begin(_ dir: CallRecord.Direction, remote: String) {
+        self.direction = dir
+        self.remote = remote
+        beganAt = Date()
+        connectedAt = nil
+    }
+
+    fileprivate func reset() {
+        if let began = beganAt, !remote.isEmpty {
+            CallHistory.shared.add(number: remote,
+                                   direction: direction,
+                                   missed: direction == .incoming && connectedAt == nil,
+                                   start: began,
+                                   duration: connectedAt.map { Int(Date().timeIntervalSince($0)) } ?? 0)
+        }
+        phase = .idle; remote = ""; isMuted = false; isSpeaker = false
+        beganAt = nil; connectedAt = nil
+    }
 }
 
 /// Real SIP engine on liblinphone (linphonesw). Kept behind this seam so the
@@ -187,14 +209,16 @@ final class SipEngine {
             currentCall = call
             let name = call.remoteAddress?.displayName ?? remote
             Task { @MainActor in
-                CallSession.shared.remote = remote
+                CallSession.shared.begin(.incoming, remote: remote)
                 CallSession.shared.phase = .incoming
             }
             onIncomingCall?(remote, name)
         case .OutgoingInit, .OutgoingProgress:
             currentCall = call
             Task { @MainActor in
-                CallSession.shared.remote = remote
+                if CallSession.shared.beganAt == nil {
+                    CallSession.shared.begin(.outgoing, remote: remote)
+                }
                 CallSession.shared.phase = .dialing
             }
         case .OutgoingRinging:
@@ -202,7 +226,9 @@ final class SipEngine {
         case .Connected, .StreamsRunning:
             Task { @MainActor in
                 if case .connected = CallSession.shared.phase {} else {
-                    CallSession.shared.phase = .connected(Date())
+                    let now = Date()
+                    CallSession.shared.connectedAt = now
+                    CallSession.shared.phase = .connected(now)
                 }
             }
             onCallConnected?()

@@ -99,6 +99,10 @@ final class SessionStore: ObservableObject {
 
     // MARK: - Client-portal sessions (push-token registry rides this realm)
 
+    /// Voicemail tab needs the portal session for the active line (nil where
+    /// the line's server doesn't run the client-portal realm yet).
+    func portalToken(for p: Provisioning) -> String? { portalTokens[p.key] }
+
     private func portalLogin(for p: Provisioning) async {
         struct LoginBody: Codable { let c: Int; let extension_: String; let password: String
             enum CodingKeys: String, CodingKey { case c, extension_ = "extension", password } }

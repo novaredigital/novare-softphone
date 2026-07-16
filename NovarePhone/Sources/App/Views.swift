@@ -194,17 +194,17 @@ struct DialerView: View {
             Text(number.isEmpty ? " " : number)
                 .font(.system(size: 34, weight: .medium, design: .rounded))
                 .lineLimit(1).minimumScaleFactor(0.4)
-            // Fixed-width grid so the keys sit close together like the native
-            // Phone app instead of stretching across the whole screen.
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(78)), count: 3), spacing: 10) {
+            // Fixed-width grid so the keys sit comfortably together (Mark-tuned:
+            // full-width was too spread, 250pt too tight — this is the middle).
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(102)), count: 3), spacing: 12) {
                 ForEach(keys, id: \.self) { k in
                     Button { number.append(k) } label: {
-                        Text(k).font(.title).frame(width: 72, height: 72)
+                        Text(k).font(.largeTitle).frame(width: 82, height: 82)
                             .background(Circle().fill(Color(.secondarySystemBackground)))
                     }.buttonStyle(.plain)
                 }
             }
-            .frame(width: 250)
+            .frame(width: 320)
             HStack(spacing: 34) {
                 Button {
                     CallManager.shared.startOutgoingCall(to: number)
@@ -224,27 +224,151 @@ struct DialerView: View {
 }
 
 struct RecentsView: View {
+    @StateObject private var history = CallHistory.shared
+
     var body: some View {
-        NavigationStack { List { Text("Call history appears here.") }.navigationTitle("Recents") }
+        NavigationStack {
+            List {
+                if history.records.isEmpty {
+                    Text("No calls yet.").foregroundStyle(.secondary)
+                }
+                ForEach(history.records) { r in
+                    Button {
+                        CallManager.shared.startOutgoingCall(to: r.number)
+                    } label: {
+                        HStack(spacing: 12) {
+                            Image(systemName: r.direction == .incoming
+                                  ? "phone.arrow.down.left.fill" : "phone.arrow.up.right.fill")
+                                .foregroundStyle(r.missed ? .red : .green)
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(r.number)
+                                    .foregroundStyle(r.missed ? .red : .primary)
+                                Text(r.start.formatted(date: .abbreviated, time: .shortened))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                            if r.missed {
+                                Text("Missed").font(.caption).foregroundStyle(.red)
+                            } else if r.duration > 0 {
+                                Text(Duration.seconds(r.duration).formatted(.time(pattern: .minuteSecond)))
+                                    .font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                }
+            }
+            .navigationTitle("Recents")
+            .toolbar {
+                if !history.records.isEmpty {
+                    Button("Clear") { history.clear() }
+                }
+            }
+        }
     }
 }
 
+// MARK: - Voicemail (list + play + call back; *97 always available)
+
+struct VMessage: Codable, Identifiable {
+    let id: Int
+    let caller_id: String?
+    let created_at: String?
+    let duration: Int?
+    let ai_summary: String?
+    let transcript: String?
+}
+
 struct VoicemailView: View {
+    @EnvironmentObject var session: SessionStore
+    @State private var messages: [VMessage] = []
+    @State private var status: String?
+    @State private var player: AVPlayer?
+    @State private var playingId: Int?
+
     var body: some View {
         NavigationStack {
-            VStack(spacing: 20) {
-                Button {
-                    SipEngine.shared.dialVoicemail()
-                } label: {
-                    Label("Call Voicemail (*97)", systemImage: "recordingtape")
-                        .font(.headline).frame(maxWidth: .infinity).padding()
+            List {
+                if let s = status {
+                    Text(s).font(.footnote).foregroundStyle(.secondary)
                 }
-                .buttonStyle(.borderedProminent)
-                .padding(.horizontal, 32)
-                Spacer()
+                ForEach(messages) { m in
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack {
+                            Text(m.caller_id ?? "Unknown").font(.headline)
+                            Spacer()
+                            Text(String((m.created_at ?? "").prefix(16)).replacingOccurrences(of: "T", with: " "))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        if let summary = m.ai_summary ?? m.transcript, !summary.isEmpty {
+                            Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                        }
+                        HStack(spacing: 20) {
+                            Button {
+                                toggle(m)
+                            } label: {
+                                Label(playingId == m.id ? "Stop" : "Play",
+                                      systemImage: playingId == m.id ? "stop.fill" : "play.fill")
+                            }
+                            .buttonStyle(.bordered)
+                            if let n = m.caller_id?.filter({ "0123456789+*#".contains($0) }), !n.isEmpty {
+                                Button {
+                                    player?.pause(); playingId = nil
+                                    CallManager.shared.startOutgoingCall(to: n)
+                                } label: {
+                                    Label("Call Back", systemImage: "phone.fill")
+                                }
+                                .buttonStyle(.bordered).tint(.green)
+                            }
+                            if let d = m.duration, d > 0 {
+                                Text("\(d)s").font(.caption).foregroundStyle(.secondary)
+                            }
+                        }
+                    }
+                    .padding(.vertical, 2)
+                }
+                Section {
+                    Button {
+                        SipEngine.shared.dialVoicemail()
+                    } label: {
+                        Label("Call Voicemail (*97)", systemImage: "recordingtape")
+                    }
+                }
             }
             .navigationTitle("Voicemail")
+            .task { await load() }
+            .refreshable { await load() }
         }
+    }
+
+    private func load() async {
+        guard let p = session.provisioning else { return }
+        guard let tok = session.portalToken(for: p) else {
+            messages = []
+            status = "The message list isn't available for this line's server yet — use Call Voicemail (*97) below."
+            return
+        }
+        var req = URLRequest(url: p.apiBase.appendingPathComponent("client-portal/voicemails"))
+        req.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization")
+        do {
+            struct Reply: Codable { let voicemails: [VMessage] }
+            let (data, _) = try await URLSession.shared.data(for: req)
+            messages = (try JSONDecoder().decode(Reply.self, from: data)).voicemails
+            status = messages.isEmpty ? "No voicemails." : nil
+        } catch {
+            status = "Couldn't load messages — pull down to retry."
+        }
+    }
+
+    private func toggle(_ m: VMessage) {
+        if playingId == m.id { player?.pause(); playingId = nil; return }
+        guard let p = session.provisioning, let tok = session.portalToken(for: p),
+              var comps = URLComponents(url: p.apiBase.appendingPathComponent("client-portal/voicemails/\(m.id)/audio"),
+                                        resolvingAgainstBaseURL: false) else { return }
+        comps.queryItems = [URLQueryItem(name: "cptoken", value: tok)]
+        guard let url = comps.url else { return }
+        player = AVPlayer(url: url)
+        player?.play()
+        playingId = m.id
     }
 }
 
