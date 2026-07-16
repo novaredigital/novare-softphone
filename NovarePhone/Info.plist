@@ -22,6 +22,8 @@
 	<string>1</string>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>Nováre Phone uses the microphone so you can talk on calls.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Nováre Phone uses the camera only to scan your sign-in code.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>voip</string>

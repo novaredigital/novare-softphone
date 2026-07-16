@@ -47,5 +47,6 @@ targets:
           - voip
           - audio
         NSMicrophoneUsageDescription: "Nováre Phone uses the microphone so you can talk on calls."
+        NSCameraUsageDescription: "Nováre Phone uses the camera only to scan your sign-in code."
         UILaunchScreen:
           UIColorName: ""
