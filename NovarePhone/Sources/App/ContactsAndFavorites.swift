@@ -131,20 +131,43 @@ private let favoritesSeed: [(name: String, label: String)] = [
 
 extension FavoritesStore {
     func seedFromContactsIfNeeded(_ contacts: [PhoneContact]) {
-        let flag = "com.novaredigital.novarephone.favseed1"
-        guard favorites.isEmpty, !UserDefaults.standard.bool(forKey: flag), !contacts.isEmpty else { return }
+        // v2: v1's substring fallback let tiny contact names hijack slots
+        // ("AI" matched inside "PAIge…"). v2 wipes a v1-seeded list and
+        // rebuilds with safe matching.
+        let v1 = "com.novaredigital.novarephone.favseed1"
+        let v2 = "com.novaredigital.novarephone.favseed2"
+        guard !UserDefaults.standard.bool(forKey: v2), !contacts.isEmpty else { return }
+        if UserDefaults.standard.bool(forKey: v1) { while !favorites.isEmpty { remove(at: IndexSet(integer: 0)) } }
+        guard favorites.isEmpty else { return }
+
         let norm: (String) -> String = { $0.lowercased().filter { !$0.isWhitespace } }
+        let tokens: (String) -> Set<String> = {
+            Set($0.lowercased().split(whereSeparator: { !$0.isLetter }).map(String.init).filter { $0.count >= 3 })
+        }
         for item in favoritesSeed {
             let want = norm(item.name)
-            guard let c = contacts.first(where: { norm($0.name) == want })
-                    ?? contacts.first(where: { norm($0.name).contains(want) || want.contains(norm($0.name)) })
-            else { continue }
-            guard !c.numbers.isEmpty else { continue }
+            let wantTokens = tokens(item.name)
+            // 1) exact name; 2) containment ONLY for names ≥6 chars; 3) every
+            //    word (≥3 letters) of the contact's name appears in the
+            //    favorite's displayed name (handles "Alicia Nurse" whose card
+            //    keeps the clinic in the company field). Longest match wins.
+            let candidates = contacts.filter { c in
+                let n = norm(c.name)
+                if n == want { return true }
+                if n.count >= 6 && (n.contains(want) || want.contains(n)) { return true }
+                let t = tokens(c.name)
+                return !t.isEmpty && t.isSubset(of: wantTokens)
+            }
+            guard let c = candidates.max(by: { norm($0.name).count < norm($1.name).count }),
+                  !c.numbers.isEmpty else { continue }
             let n = c.numbers.first(where: { $0.label.compare(item.label, options: .caseInsensitive) == .orderedSame })
                  ?? c.numbers[0]
             add(name: c.name, number: n.number)
         }
-        if !favorites.isEmpty { UserDefaults.standard.set(true, forKey: flag) }
+        if !favorites.isEmpty {
+            UserDefaults.standard.set(true, forKey: v2)
+            UserDefaults.standard.set(true, forKey: v1)
+        }
     }
 }
 
