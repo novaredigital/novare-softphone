@@ -43,3 +43,8 @@ the repo public.
   quote first, decide after. Trademark protects the brand either way.
 - 2026-07-15 Mark: prepare to go either way — a Belledonne non-reply must
   not delay release.
+- 2026-07-16: DECIDED — commercial licensing evaluated and declined.
+  **Path B is final: the app is open-source under AGPLv3.** LICENSE (AGPLv3
+  full text) and BRAND-ASSETS-LICENSE added. Remaining Path B steps: make
+  the GitHub repo public, and add the source link to the App Store listing
+  at submission.
