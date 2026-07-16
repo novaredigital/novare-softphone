@@ -211,6 +211,7 @@ struct DialerView: View {
     @State private var number = ""
     @State private var showSettings = false
     @State private var dnd = SipEngine.shared.dndEnabled
+    @StateObject private var history = CallHistory.shared
     private let keys = ["1","2","3","4","5","6","7","8","9","*","0","#"]
 
     var body: some View {
@@ -273,13 +274,21 @@ struct DialerView: View {
             LazyVGrid(columns: Array(repeating: GridItem(.fixed(102)), count: 3), spacing: 12) {
                 Color.clear.frame(width: 82, height: 82)
                 Button {
-                    CallManager.shared.startOutgoingCall(to: number)
-                    number = ""   // keypad is blank again after the call
+                    if number.isEmpty {
+                        // Redial: first tap recalls the last dialed number,
+                        // second tap (below) places the call.
+                        if let last = history.records.first(where: { $0.direction == .outgoing })?.number {
+                            number = last
+                        }
+                    } else {
+                        CallManager.shared.startOutgoingCall(to: number)
+                        number = ""   // keypad is blank again after the call
+                    }
                 } label: {
                     Image(systemName: "phone.fill").font(.title)
                         .frame(width: 82, height: 82)
                         .background(Circle().fill(.green)).foregroundStyle(.white)
-                }.disabled(number.isEmpty)
+                }.disabled(number.isEmpty && !history.records.contains(where: { $0.direction == .outgoing }))
                 Button { if !number.isEmpty { number.removeLast() } } label: {
                     Image(systemName: "delete.left").font(.title2)
                         .frame(width: 82, height: 82)
