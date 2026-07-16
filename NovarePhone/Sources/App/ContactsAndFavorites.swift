@@ -91,6 +91,63 @@ final class FavoritesStore: ObservableObject {
     }
 }
 
+// MARK: - One-time Favorites seed (Mark's iPhone Phone-app favorites, 2026-07-16)
+
+/// Ordered exactly like the Phone app screenshots. Runs ONCE, only into an
+/// empty Favorites list, after Contacts access is granted. Names are matched
+/// against the device contacts; the number is picked by its label, falling
+/// back to the contact's first number. Unmatched names are skipped silently.
+private let favoritesSeed: [(name: String, label: String)] = [
+    ("Phone Call Recorder", "home"),
+    ("Erik Broeren", "iPhone"),
+    ("Mary Roser", "phone"),
+    ("Doug Adair", "work"),
+    ("Loren & Julie Churchill", "phone"),
+    ("Loren Churchhill", "mobile"),
+    ("Sean Churchill", "mobile"),
+    ("Terry Burnett", "mobile"),
+    ("Lisa Berry", "mobile"),
+    ("kelly Stoker (moms Friend)", "mobile"),
+    ("Joseph Farmer", "work"),
+    ("Jane Cobb Pickering", "phone"),
+    ("Jeffrey Jump", "work"),
+    ("John Miller", "work"),
+    ("Philip Carson", "work"),
+    ("Todd Fowler", "work"),
+    ("Justin Arnold", "work"),
+    ("Shannon Faires", "work"),
+    ("Chattanooga Allergy Clinic Alicia Nurse", "work"),
+    ("Food City Pharmacy", "work"),
+    ("Mike Wynn", "mobile"),
+    ("Highland Vet Center", "mobile"),
+    ("Paige (VCSG) Wichman (VCSG)", "work"),
+    ("Animal Emergency Hospital", "work"),
+    ("Pet D-tails Grooming", "mobile"),
+    ("Jason Irrigation", "mobile"),
+    ("Terry Culbertson Morgan Alarm Security", "mobile"),
+    ("Morgan Alarm Monitoring", "work"),
+    ("Catherine Thomas", "home"),
+]
+
+extension FavoritesStore {
+    func seedFromContactsIfNeeded(_ contacts: [PhoneContact]) {
+        let flag = "com.novaredigital.novarephone.favseed1"
+        guard favorites.isEmpty, !UserDefaults.standard.bool(forKey: flag), !contacts.isEmpty else { return }
+        let norm: (String) -> String = { $0.lowercased().filter { !$0.isWhitespace } }
+        for item in favoritesSeed {
+            let want = norm(item.name)
+            guard let c = contacts.first(where: { norm($0.name) == want })
+                    ?? contacts.first(where: { norm($0.name).contains(want) || want.contains(norm($0.name)) })
+            else { continue }
+            guard !c.numbers.isEmpty else { continue }
+            let n = c.numbers.first(where: { $0.label.compare(item.label, options: .caseInsensitive) == .orderedSame })
+                 ?? c.numbers[0]
+            add(name: c.name, number: n.number)
+        }
+        if !favorites.isEmpty { UserDefaults.standard.set(true, forKey: flag) }
+    }
+}
+
 // MARK: - Views
 
 struct FavoritesView: View {
@@ -122,6 +179,10 @@ struct FavoritesView: View {
             }
             .navigationTitle("Favorites")
             .toolbar { if !favs.favorites.isEmpty { EditButton() } }
+            .task {
+                await ContactsStore.shared.load()
+                favs.seedFromContactsIfNeeded(ContactsStore.shared.contacts)
+            }
         }
     }
 }
