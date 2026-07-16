@@ -33,10 +33,15 @@ final class SipEngine {
     private var core: Core?
     private var coreDelegate: CoreDelegate?
     private var currentCall: Call?
+    private var linAccounts: [Account] = []
 
     private(set) var isConfigured = false
     var isRegistered: Bool {
         core?.defaultAccount?.state == .Ok
+    }
+
+    func isAccountRegistered(_ index: Int) -> Bool {
+        linAccounts.indices.contains(index) && linAccounts[index].state == .Ok
     }
 
     // Set by CallManager so SIP-originated events reach CallKit.
@@ -46,49 +51,66 @@ final class SipEngine {
 
     // MARK: - Lifecycle
 
-    /// Build the liblinphone Core from QR-provisioned values and register.
-    func configure(with p: Provisioning) {
+    /// Single-account convenience (first sign-in path).
+    func configure(with p: Provisioning) { configure(accounts: [p], activeIndex: 0) }
+
+    /// Build/refresh the liblinphone Core from QR-provisioned accounts. ALL
+    /// accounts register simultaneously (incoming rings from any of them);
+    /// `activeIndex` selects the outbound line. Nothing is hardcoded.
+    func configure(accounts: [Provisioning], activeIndex: Int) {
+        guard !accounts.isEmpty else { shutdown(); return }
         do {
             let factory = Factory.Instance
-            let core = try factory.createCore(configPath: nil, factoryConfigPath: nil, systemContext: nil)
+            if core == nil {
+                let c = try factory.createCore(configPath: nil, factoryConfigPath: nil, systemContext: nil)
+                // Codecs: Opus + G.711 (matches the PBX). Audio only.
+                c.videoActivationPolicy?.automaticallyInitiate = false
+                c.videoActivationPolicy?.automaticallyAccept = false
+                // Delegate: bridge SIP call state -> CallKit (CallManager).
+                let delegate = EngineCoreDelegate(engine: self)
+                c.addDelegate(delegate: delegate)
+                try c.start()
+                self.coreDelegate = delegate
+                self.core = c
+            }
+            guard let core = core else { return }
 
-            // Credentials.
-            let realm = p.domain
-            let auth = try factory.createAuthInfo(username: p.username, userid: p.username,
-                                                  passwd: p.password, ha1: nil, realm: nil, domain: realm)
-            core.addAuthInfo(info: auth)
+            core.clearAccounts()
+            core.clearAllAuthInfo()
+            linAccounts.removeAll()
 
-            // Account: sip:USER@DOMAIN registering at DOMAIN:PORT;transport=...
-            let params = try core.createAccountParams()
-            let identity = try factory.createAddress(addr: "sip:\(p.username)@\(p.domain)")
-            try params.setIdentityaddress(newValue: identity)
-            let serverUri = "sip:\(p.domain):\(p.port);transport=\(p.transport.lowercased())"
-            let serverAddr = try factory.createAddress(addr: serverUri)
-            try params.setServeraddress(newValue: serverAddr)
-            params.registerEnabled = true
-            params.expires = 60           // matches the PBX NAT re-register cadence
+            for p in accounts {
+                let auth = try factory.createAuthInfo(username: p.username, userid: p.username,
+                                                      passwd: p.password, ha1: nil, realm: nil, domain: p.domain)
+                core.addAuthInfo(info: auth)
 
-            let account = try core.createAccount(params: params)
-            try core.addAccount(account: account)
-            core.defaultAccount = account
+                let params = try core.createAccountParams()
+                let identity = try factory.createAddress(addr: "sip:\(p.username)@\(p.domain)")
+                try params.setIdentityaddress(newValue: identity)
+                let serverUri = "sip:\(p.domain):\(p.port);transport=\(p.transport.lowercased())"
+                let serverAddr = try factory.createAddress(addr: serverUri)
+                try params.setServeraddress(newValue: serverAddr)
+                params.registerEnabled = true
+                params.expires = 60       // matches the PBX NAT re-register cadence
 
-            // Codecs: Opus + G.711 (matches the PBX). Audio only.
-            core.videoActivationPolicy?.automaticallyInitiate = false
-            core.videoActivationPolicy?.automaticallyAccept = false
-
-            // Delegate: bridge SIP call state -> CallKit (CallManager).
-            let delegate = EngineCoreDelegate(engine: self)
-            core.addDelegate(delegate: delegate)
-            self.coreDelegate = delegate
-
-            try core.start()
-            self.core = core
+                let account = try core.createAccount(params: params)
+                try core.addAccount(account: account)
+                linAccounts.append(account)
+                log("account added \(p.username)@\(p.domain):\(p.port)/\(p.transport)")
+            }
+            setOutboundAccount(activeIndex)
             isConfigured = true
-            log("configured \(p.username)@\(p.domain):\(p.port)/\(p.transport)")
+            log("configured \(accounts.count) account(s), outbound line #\(activeIndex)")
         } catch {
             log("configure failed: \(error)")
             isConfigured = false
         }
+    }
+
+    /// Which account outgoing calls use (the dialer's line picker).
+    func setOutboundAccount(_ index: Int) {
+        guard let core = core else { return }
+        core.defaultAccount = linAccounts.indices.contains(index) ? linAccounts[index] : linAccounts.first
     }
 
     /// REGISTER now (also invoked from a VoIP push so the PBX's push-wake
@@ -104,6 +126,7 @@ final class SipEngine {
         core = nil
         coreDelegate = nil
         currentCall = nil
+        linAccounts.removeAll()
         isConfigured = false
         log("shutdown()")
     }

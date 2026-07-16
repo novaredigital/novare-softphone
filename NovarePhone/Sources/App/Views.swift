@@ -100,7 +100,7 @@ struct InCallView: View {
             if showKeypad {
                 Text(dtmfEntered.isEmpty ? " " : dtmfEntered)
                     .font(.title2.monospaced()).foregroundStyle(.secondary).lineLimit(1)
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 12) {
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(70)), count: 3), spacing: 8) {
                     ForEach(["1","2","3","4","5","6","7","8","9","*","0","#"], id: \.self) { k in
                         Button {
                             dtmfEntered.append(k)
@@ -110,7 +110,7 @@ struct InCallView: View {
                                 .background(Circle().fill(Color(.secondarySystemBackground)))
                         }.buttonStyle(.plain)
                     }
-                }.padding(.horizontal, 40)
+                }.frame(width: 224)
             }
 
             Spacer()
@@ -165,16 +165,38 @@ private struct CallControlButton: View {
 }
 
 struct DialerView: View {
+    @EnvironmentObject var session: SessionStore
     @State private var number = ""
     private let keys = ["1","2","3","4","5","6","7","8","9","*","0","#"]
 
     var body: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 12) {
+            if session.accounts.count > 1 {
+                Menu {
+                    ForEach(session.accounts.indices, id: \.self) { i in
+                        Button {
+                            session.activeIndex = i
+                        } label: {
+                            let a = session.accounts[i]
+                            Label("\(a.accountName) (\(a.username))",
+                                  systemImage: i == session.activeIndex ? "checkmark" : "phone")
+                        }
+                    }
+                } label: {
+                    let a = session.provisioning
+                    Label("Line: \(a?.accountName ?? "") (\(a?.username ?? ""))",
+                          systemImage: "phone.badge.checkmark")
+                        .font(.subheadline)
+                }
+                .padding(.top, 8)
+            }
             Spacer()
             Text(number.isEmpty ? " " : number)
                 .font(.system(size: 34, weight: .medium, design: .rounded))
                 .lineLimit(1).minimumScaleFactor(0.4)
-            LazyVGrid(columns: Array(repeating: GridItem(.flexible()), count: 3), spacing: 14) {
+            // Fixed-width grid so the keys sit close together like the native
+            // Phone app instead of stretching across the whole screen.
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(78)), count: 3), spacing: 10) {
                 ForEach(keys, id: \.self) { k in
                     Button { number.append(k) } label: {
                         Text(k).font(.title).frame(width: 72, height: 72)
@@ -182,9 +204,11 @@ struct DialerView: View {
                     }.buttonStyle(.plain)
                 }
             }
-            HStack(spacing: 40) {
+            .frame(width: 250)
+            HStack(spacing: 34) {
                 Button {
                     CallManager.shared.startOutgoingCall(to: number)
+                    number = ""   // keypad is blank again after the call
                 } label: {
                     Image(systemName: "phone.fill").font(.title)
                         .frame(width: 72, height: 72)
@@ -226,20 +250,41 @@ struct VoicemailView: View {
 
 struct SettingsView: View {
     @EnvironmentObject var session: SessionStore
+    @State private var showScanner = false
+    @State private var signOutIndex: Int?
 
     var body: some View {
         NavigationStack {
             List {
-                if let p = session.provisioning {
-                    Section("Account") {
-                        LabeledContent("Name", value: p.accountName)
-                        LabeledContent("Extension", value: p.username)
+                Section("Lines") {
+                    ForEach(session.accounts.indices, id: \.self) { i in
+                        let a = session.accounts[i]
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack {
+                                Text("\(a.accountName) — ext \(a.username)")
+                                if i == session.activeIndex {
+                                    Text("OUTBOUND").font(.caption2).bold()
+                                        .padding(.horizontal, 6).padding(.vertical, 2)
+                                        .background(Capsule().fill(Color.accentColor.opacity(0.15)))
+                                }
+                            }
+                            Text(a.domain).font(.caption).foregroundStyle(.secondary)
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { session.activeIndex = i }
+                        .swipeActions {
+                            Button("Sign Out", role: .destructive) { signOutIndex = i }
+                        }
+                    }
+                    Button {
+                        showScanner = true
+                    } label: {
+                        Label("Add a Line (Scan Sign-In Code)", systemImage: "qrcode.viewfinder")
                     }
                 }
                 Section {
-                    Button("Sign Out", role: .destructive) {
-                        Task { await session.signOut() }
-                    }
+                    Text("Tap a line to make it the outbound line. Swipe a line left to sign it out. Incoming calls ring on every line.")
+                        .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
                     Text("Nováre Telecom, a division of Novare Digital Corp")
@@ -247,6 +292,19 @@ struct SettingsView: View {
                 } header: { Text("About") }
             }
             .navigationTitle("Settings")
+            .sheet(isPresented: $showScanner) {
+                QRScannerView { payload in
+                    showScanner = false
+                    Task { await session.signIn(qrPayload: payload) }
+                }
+            }
+            .confirmationDialog("Sign out this line?", isPresented: Binding(
+                get: { signOutIndex != nil }, set: { if !$0 { signOutIndex = nil } })) {
+                Button("Sign Out", role: .destructive) {
+                    if let i = signOutIndex { Task { await session.signOut(at: i) } }
+                    signOutIndex = nil
+                }
+            }
         }
     }
 }
