@@ -1,5 +1,6 @@
 import SwiftUI
 import Contacts
+import ContactsUI
 
 // MARK: - Device contacts (read-only; contacts never leave the phone)
 
@@ -210,10 +211,46 @@ struct FavoritesView: View {
     }
 }
 
+/// Apple's native contact card (view/edit/delete existing, or create new) —
+/// identical to the Contacts app, so edits sync to the address book + iCloud.
+struct ContactCardView: UIViewControllerRepresentable {
+    let contactId: String?          // nil = create a new contact
+
+    func makeCoordinator() -> Coord { Coord() }
+    final class Coord: NSObject, CNContactViewControllerDelegate {
+        func contactViewController(_ vc: CNContactViewController, didCompleteWith contact: CNContact?) {
+            vc.dismiss(animated: true)
+        }
+    }
+    func makeUIViewController(context: Context) -> UINavigationController {
+        let store = CNContactStore()
+        let vc: CNContactViewController
+        if let id = contactId,
+           let full = try? store.unifiedContact(withIdentifier: id,
+                                                keysToFetch: [CNContactViewController.descriptorForRequiredKeys()]) {
+            vc = CNContactViewController(for: full)
+            vc.allowsEditing = true
+            vc.allowsActions = false   // our rows handle dialing; card is for editing
+        } else {
+            vc = CNContactViewController(forNewContact: nil)
+        }
+        vc.contactStore = store
+        vc.delegate = context.coordinator
+        return UINavigationController(rootViewController: vc)
+    }
+    func updateUIViewController(_ vc: UINavigationController, context: Context) {}
+}
+
+private struct ContactCardTarget: Identifiable {
+    let id: String
+    let contactId: String?
+}
+
 struct ContactsView: View {
     @StateObject private var store = ContactsStore.shared
     @StateObject private var favs = FavoritesStore.shared
     @State private var search = ""
+    @State private var card: ContactCardTarget?
 
     private var filtered: [PhoneContact] {
         guard !search.isEmpty else { return store.contacts }
@@ -253,12 +290,31 @@ struct ContactsView: View {
                             }
                         }
                     } label: {
-                        Text(c.name)
+                        HStack {
+                            Text(c.name)
+                            Spacer()
+                            Button {
+                                card = ContactCardTarget(id: c.id, contactId: c.id)
+                            } label: {
+                                Image(systemName: "info.circle").foregroundStyle(.secondary)
+                            }
+                            .buttonStyle(.plain)
+                        }
                     }
                 }
             }
             .navigationTitle("Contacts")
             .searchable(text: $search, prompt: "Search name or number")
+            .toolbar {
+                Button {
+                    card = ContactCardTarget(id: "new", contactId: nil)
+                } label: {
+                    Image(systemName: "plus")
+                }
+            }
+            .sheet(item: $card, onDismiss: { Task { await store.load() } }) { t in
+                ContactCardView(contactId: t.contactId).ignoresSafeArea()
+            }
             .task { await store.load() }
             .refreshable { await store.load() }
         }
