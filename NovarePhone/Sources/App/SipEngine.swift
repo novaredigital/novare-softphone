@@ -188,6 +188,7 @@ final class SipEngine {
         log("ensureRegistered()")
     }
 
+
     /// WiFi ⇄ cellular handoff. Without this the Core's sockets stay bound to
     /// the network the app registered on — away from home, dialing goes into
     /// a dead socket until relaunch. Toggling networkReachable forces a

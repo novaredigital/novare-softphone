@@ -197,6 +197,11 @@ final class SessionStore: ObservableObject {
             req.httpBody = try JSONEncoder().encode(Body(extension_: p.username, password: p.password))
             let (data, _) = try await URLSession.shared.data(for: req)
             userTokens[p.key] = try JSONDecoder().decode(Reply.self, from: data).token
+            // Token-registration race fix: the APNs push token often arrives
+            // BEFORE this login finishes, so its registerPushToken() call found
+            // no /user bearer and skipped this line. Now that the bearer exists,
+            // register the push token for this line immediately.
+            if let t = lastPushToken { await registerPushToken(t) }
         } catch {
             // Voicemail tab will show the *97 fallback if this line has no token.
         }
