@@ -1,4 +1,4 @@
-# Nóvare Phone — licensing posture (decide-at-release, no schedule risk)
+# Nováre Phone — licensing posture (decide-at-release, no schedule risk)
 
 The SIP engine is Belledonne's liblinphone (`linphonesw` Swift SDK), licensed
 **AGPLv3**. A commercial-license quote was requested from Belledonne on
@@ -18,7 +18,7 @@ This repo is prepared so EITHER path can be flipped on release day:
 2. Make this GitHub repo public (or push a mirrored public release repo).
 3. Add the source link to the App Store description ("Source code:
    https://github.com/novaredigital/novare-softphone").
-4. Brand stays protected: see `BRAND-ASSETS-LICENSE` note below — the Nóvare
+4. Brand stays protected: see `BRAND-ASSETS-LICENSE` note below — the Nováre
    name, logo, and icon are trademarks and are NOT granted by the AGPL.
    Anyone forking must rename/rebrand.
 
@@ -28,7 +28,7 @@ This repo is prepared so EITHER path can be flipped on release day:
   methods; CallKit, UI, Keychain, and networking know nothing about linphone.
   (This is also the escape hatch to a BSD engine — baresip — if both paths
   fail; only SipEngine.swift would be rewritten.)
-- No server addresses, credentials, or Nóvare infrastructure exist anywhere
+- No server addresses, credentials, or Nováre infrastructure exist anywhere
   in this repo (QR-provisioning design rule), so opening the source leaks
   nothing operational.
 

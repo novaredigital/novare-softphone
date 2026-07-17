@@ -23,4 +23,4 @@ The `linphonesw` SDK resolves via Swift Package Manager from gitlab.linphone.org
 
 The source code is licensed under the **GNU Affero General Public License v3** — see [LICENSE](LICENSE) and [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
 
-The Nóvare names, app icon, and logos are **trademarks of Novare Digital Corp and are NOT covered by the code license** — see [BRAND-ASSETS-LICENSE](BRAND-ASSETS-LICENSE). Derivative apps must ship under their own branding.
+The Nováre names, app icon, and logos are **trademarks of Novare Digital Corp and are NOT covered by the code license** — see [BRAND-ASSETS-LICENSE](BRAND-ASSETS-LICENSE). Derivative apps must ship under their own branding.

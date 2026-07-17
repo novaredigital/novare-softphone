@@ -74,7 +74,7 @@ final class SessionStore: ObservableObject {
             await userLogin(for: p)
             if let token = lastPushToken { await registerPushToken(token) }
         } catch {
-            lastError = "That code isn't a valid Nóvare sign-in code."
+            lastError = "That code isn't a valid Nováre sign-in code."
         }
     }
 
@@ -131,7 +131,7 @@ final class SessionStore: ObservableObject {
     func userToken(for p: Provisioning) -> String? { userTokens[p.key] }
 
     /// Sign the line into the /user realm (extension + SIP password → token).
-    /// This realm exists on every Nóvare PBX and reads the extension's own
+    /// This realm exists on every Nováre PBX and reads the extension's own
     /// mailbox from the shared db — so voicemail works on prod lines today.
     private func userLogin(for p: Provisioning) async {
         struct Body: Codable { let extension_: String; let password: String

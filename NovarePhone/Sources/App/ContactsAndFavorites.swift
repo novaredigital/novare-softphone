@@ -298,7 +298,7 @@ struct ContactsView: View {
         NavigationStack {
             List {
                 if store.denied {
-                    Text("Contacts access is off. Allow it in Settings → Nóvare Phone → Contacts.")
+                    Text("Contacts access is off. Allow it in Settings → Nováre Phone → Contacts.")
                         .foregroundStyle(.secondary)
                 }
                 ForEach(filtered) { c in

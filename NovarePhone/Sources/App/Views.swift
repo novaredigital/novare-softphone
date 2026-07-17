@@ -520,7 +520,7 @@ struct SettingsView: View {
                     NavigationLink {
                         AboutView()
                     } label: {
-                        Label("About Nóvare Telecom", systemImage: "info.circle")
+                        Label("About Nováre Telecom", systemImage: "info.circle")
                     }
                 } header: { Text("About") }
             }
@@ -570,7 +570,7 @@ struct AboutView: View {
                     Image("NovareTelecomLogo")
                         .resizable().scaledToFit()
                         .frame(maxWidth: 240)
-                    Text("Nóvare Telecom\na division of Novare Digital Corp")
+                    Text("Nováre Telecom\na division of Novare Digital Corp")
                         .font(.subheadline).bold()
                         .multilineTextAlignment(.center)
                     Text("a telecom infrastructure firm™")
