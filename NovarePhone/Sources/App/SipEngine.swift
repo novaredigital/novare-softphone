@@ -113,6 +113,13 @@ final class SipEngine {
                 // Codecs: Opus + G.711 (matches the PBX). Audio only.
                 c.videoActivationPolicy?.automaticallyInitiate = false
                 c.videoActivationPolicy?.automaticallyAccept = false
+                // CallKit owns the audio session. Without this, liblinphone
+                // activates its OWN AVAudioSession, which works for outgoing
+                // (it drives it alone) but on a CallKit-answered INCOMING call
+                // it fights CallKit and no mic/speaker audio flows. Telling the
+                // Core CallKit is enabled makes it defer to our
+                // activateAudioSession() calls from provider(didActivate:).
+                c.callkitEnabled = true
                 // Delegate: bridge SIP call state -> CallKit (CallManager).
                 let delegate = EngineCoreDelegate(engine: self)
                 c.addDelegate(delegate: delegate)
