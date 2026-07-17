@@ -54,12 +54,15 @@ struct MainTabView: View {
     @StateObject private var call = CallSession.shared
 
     var body: some View {
+        // iOS shows at most 5 bottom tabs (a 6th buries the extras behind
+        // "More"). Ext takes the 5th slot per Mark; Voicemail moved to the
+        // tape button in the Keypad header — same screen, one tap away.
         TabView {
             FavoritesView().tabItem { Label("Favorites", systemImage: "star.fill") }
             RecentsView().tabItem { Label("Recents", systemImage: "clock.fill") }
             ContactsView().tabItem { Label("Contacts", systemImage: "person.crop.circle") }
             DialerView().tabItem { Label("Keypad", systemImage: "circle.grid.3x3.fill") }
-            VoicemailView().tabItem { Label("Voicemail", systemImage: "recordingtape") }
+            ExtensionsView().tabItem { Label("Ext", systemImage: "person.3.fill") }
         }
         .fullScreenCover(isPresented: Binding(get: { call.isActive }, set: { if !$0 { } })) {
             InCallView().environmentObject(call)
@@ -210,6 +213,7 @@ struct DialerView: View {
     @EnvironmentObject var session: SessionStore
     @State private var number = ""
     @State private var showSettings = false
+    @State private var showVoicemail = false
     @State private var dnd = SipEngine.shared.dndEnabled
     @StateObject private var history = CallHistory.shared
     private let keys = ["1","2","3","4","5","6","7","8","9","*","0","#"]
@@ -226,6 +230,11 @@ struct DialerView: View {
                     Text("Do Not Disturb").font(.caption).foregroundStyle(.red)
                 }
                 Spacer()
+                // Voicemail moved here from the tab bar (Ext took its slot —
+                // iOS caps the bottom bar at 5). Same full voicemail screen.
+                Button { showVoicemail = true } label: {
+                    Image(systemName: "recordingtape").font(.title3)
+                }
                 Button { showSettings = true } label: {
                     Image(systemName: "gearshape.fill").font(.title3)
                 }
@@ -275,9 +284,11 @@ struct DialerView: View {
                 Color.clear.frame(width: 82, height: 82)
                 Button {
                     if number.isEmpty {
-                        // Redial: first tap recalls the last dialed number,
-                        // second tap (below) places the call.
-                        if let last = history.records.first(where: { $0.direction == .outgoing })?.number {
+                        // Redial: first tap recalls the last number dialed from
+                        // ANYWHERE in the app (persisted at dial time — the old
+                        // history scan returned stale entries), second tap dials.
+                        if let last = CallManager.lastDialedNumber
+                            ?? history.records.first(where: { $0.direction == .outgoing })?.number {
                             number = last
                         }
                     } else {
@@ -288,7 +299,8 @@ struct DialerView: View {
                     Image(systemName: "phone.fill").font(.title)
                         .frame(width: 82, height: 82)
                         .background(Circle().fill(.green)).foregroundStyle(.white)
-                }.disabled(number.isEmpty && !history.records.contains(where: { $0.direction == .outgoing }))
+                }.disabled(number.isEmpty && CallManager.lastDialedNumber == nil
+                           && !history.records.contains(where: { $0.direction == .outgoing }))
                 Button { if !number.isEmpty { number.removeLast() } } label: {
                     Image(systemName: "delete.left").font(.title2)
                         .frame(width: 82, height: 82)
@@ -300,6 +312,9 @@ struct DialerView: View {
         .padding()
         .sheet(isPresented: $showSettings) {
             SettingsView().environmentObject(session)
+        }
+        .sheet(isPresented: $showVoicemail) {
+            VoicemailView().environmentObject(session)
         }
     }
 }

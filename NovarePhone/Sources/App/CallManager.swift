@@ -50,7 +50,15 @@ final class CallManager: NSObject, CXProviderDelegate {
 
     // MARK: - Outgoing
 
+    /// True redial source: the last number DIALED from anywhere in the app
+    /// (keypad, Favorites, Recents, Ext) — even if the call never connected.
+    private static let lastDialedKey = "com.novaredigital.novarephone.lastdialed"
+    static var lastDialedNumber: String? {
+        UserDefaults.standard.string(forKey: lastDialedKey)
+    }
+
     func startOutgoingCall(to number: String) {
+        UserDefaults.standard.set(number, forKey: Self.lastDialedKey)
         let uuid = UUID()
         activeCallUUID = uuid
         let action = CXStartCallAction(call: uuid, handle: CXHandle(type: .phoneNumber, value: number))
