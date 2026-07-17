@@ -159,8 +159,26 @@ final class SipEngine {
     /// window sees our REGISTER and delivers the waiting call).
     func ensureRegistered() {
         guard let core = core else { return }
+        setBackgrounded(false)   // a push may arrive while backgrounded — re-enable first
         core.refreshRegisters()
         log("ensureRegistered()")
+    }
+
+    /// Background = un-REGISTER every line (the PBX then push-wakes us for
+    /// incoming calls — a lingering binding would swallow them until expiry).
+    /// Foreground = re-enable and re-REGISTER. No-ops when state already matches.
+    private var isBackgrounded = false
+    func setBackgrounded(_ bg: Bool) {
+        guard bg != isBackgrounded, core != nil else { return }
+        isBackgrounded = bg
+        for account in linAccounts {
+            if let np = account.params?.clone() {
+                np.registerEnabled = !bg
+                account.params = np
+            }
+        }
+        core?.refreshRegisters()
+        log(bg ? "backgrounded — un-registering (push takes over)" : "foregrounded — re-registering")
     }
 
     /// WiFi ⇄ cellular handoff. Without this the Core's sockets stay bound to

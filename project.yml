@@ -15,7 +15,7 @@ packages:
 settings:
   base:
     MARKETING_VERSION: "1.0"
-    CURRENT_PROJECT_VERSION: "2"
+    CURRENT_PROJECT_VERSION: "3"
     DEVELOPMENT_TEAM: "8S8JBLPQ9Z"
     SWIFT_VERSION: "5.0"
 
@@ -50,6 +50,10 @@ targets:
         UIBackgroundModes:
           - voip
           - audio
+        # Pre-answers App Store Connect's export-compliance question (the app
+        # uses only exempt encryption: HTTPS/TLS) — without it every uploaded
+        # build sits "not internally testable" until answered by hand.
+        ITSAppUsesNonExemptEncryption: false
         NSMicrophoneUsageDescription: "Nováre Phone uses the microphone so you can talk on calls."
         NSCameraUsageDescription: "Nováre Phone uses the camera only to scan your sign-in code."
         NSContactsUsageDescription: "Nováre Phone shows your contacts so you can call them from your work lines. Contacts never leave your phone."

@@ -70,7 +70,12 @@ final class SessionStore: ObservableObject {
         activeIndex = min(UserDefaults.standard.integer(forKey: activeKey), max(accounts.count - 1, 0))
         if !accounts.isEmpty {
             SipEngine.shared.configure(accounts: accounts, activeIndex: activeIndex)
-            Task { for p in accounts { await portalLogin(for: p); await userLogin(for: p) } }
+            Task {
+                for p in accounts { await portalLogin(for: p); await userLogin(for: p) }
+                // The APNs token often arrives before these logins finish —
+                // re-fire the registration now that bearer tokens exist.
+                if let token = lastPushToken { await registerPushToken(token) }
+            }
         }
     }
 
@@ -214,19 +219,31 @@ final class SessionStore: ObservableObject {
         }
     }
 
-    /// Fan the device's push token out to every line's own server.
+    /// Fan the device's push token out to every line's own server. Two realms
+    /// exist in the wild: client-portal (box-5 style tenant servers) and /user
+    /// (shared-db production, 134) — register with whichever the line has.
     func registerPushToken(_ token: String) async {
         lastPushToken = token
         struct Body: Codable { let platform: String; let token: String; let device_id: String }
+        let body = try? JSONEncoder().encode(Body(platform: "apns", token: token,
+                                                  device_id: UIDeviceIdentifier.stable()))
         for p in accounts {
-            guard let bearer = portalTokens[p.key] else { continue }
-            var req = URLRequest(url: p.apiBase.appendingPathComponent("client-portal/push-token"))
-            req.httpMethod = "POST"
-            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-            req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
-            req.httpBody = try? JSONEncoder().encode(Body(platform: "apns", token: token,
-                                                          device_id: UIDeviceIdentifier.stable()))
-            _ = try? await URLSession.shared.data(for: req)
+            if let bearer = portalTokens[p.key] {
+                var req = URLRequest(url: p.apiBase.appendingPathComponent("client-portal/push-token"))
+                req.httpMethod = "POST"
+                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+                req.httpBody = body
+                _ = try? await URLSession.shared.data(for: req)
+            }
+            if let bearer = userTokens[p.key] {
+                var req = URLRequest(url: p.apiBase.appendingPathComponent("user/push-token"))
+                req.httpMethod = "POST"
+                req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+                req.httpBody = body
+                _ = try? await URLSession.shared.data(for: req)
+            }
         }
     }
 
@@ -235,14 +252,25 @@ final class SessionStore: ObservableObject {
     }
 
     private func removePushToken(for p: Provisioning) async {
-        guard let bearer = portalTokens[p.key], let token = lastPushToken else { return }
+        guard let token = lastPushToken else { return }
         struct Body: Codable { let token: String }
-        var req = URLRequest(url: p.apiBase.appendingPathComponent("client-portal/push-token"))
-        req.httpMethod = "DELETE"
-        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
-        req.httpBody = try? JSONEncoder().encode(Body(token: token))
-        _ = try? await URLSession.shared.data(for: req)
+        let body = try? JSONEncoder().encode(Body(token: token))
+        if let bearer = portalTokens[p.key] {
+            var req = URLRequest(url: p.apiBase.appendingPathComponent("client-portal/push-token"))
+            req.httpMethod = "DELETE"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+            req.httpBody = body
+            _ = try? await URLSession.shared.data(for: req)
+        }
+        if let bearer = userTokens[p.key] {
+            var req = URLRequest(url: p.apiBase.appendingPathComponent("user/push-token"))
+            req.httpMethod = "DELETE"
+            req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+            req.setValue("Bearer \(bearer)", forHTTPHeaderField: "Authorization")
+            req.httpBody = body
+            _ = try? await URLSession.shared.data(for: req)
+        }
     }
 
     // MARK: - Keychain plumbing
