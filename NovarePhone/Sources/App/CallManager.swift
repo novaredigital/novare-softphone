@@ -39,12 +39,23 @@ final class CallManager: NSObject, CXProviderDelegate {
     // MARK: - Incoming (from a VoIP push or a live SIP INVITE)
 
     func reportIncomingCall(from number: String, displayName: String, completion: @escaping () -> Void) {
-        let uuid = UUID()
-        activeCallUUID = uuid
         let update = CXCallUpdate()
         update.remoteHandle = CXHandle(type: .phoneNumber, value: number)
         update.localizedCallerName = displayName
         update.hasVideo = false
+        // Idempotent: one incoming call reaches here TWICE — first from the
+        // VoIP push (before the SIP INVITE), then again when the SIP
+        // .IncomingReceived fires. Reporting a second CXCall makes iOS show two
+        // calls with a Swap button, neither answerable. If we already have a
+        // call, just UPDATE it (fill in the real caller name) — never create a
+        // second one.
+        if let existing = activeCallUUID {
+            provider.reportCall(with: existing, updated: update)
+            completion()
+            return
+        }
+        let uuid = UUID()
+        activeCallUUID = uuid
         provider.reportNewIncomingCall(with: uuid, update: update) { _ in completion() }
     }
 
