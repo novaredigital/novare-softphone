@@ -46,10 +46,12 @@ final class CallManager: NSObject, CXProviderDelegate {
         // Idempotent: one incoming call reaches here TWICE — first from the
         // VoIP push (before the SIP INVITE), then again when the SIP
         // .IncomingReceived fires. Reporting a second CXCall makes iOS show two
-        // calls with a Swap button, neither answerable. If we already have a
-        // call, just UPDATE it (fill in the real caller name) — never create a
-        // second one.
-        if let existing = activeCallUUID {
+        // calls with a Swap button, neither answerable — so UPDATE the existing
+        // call instead. BUT only if iOS still has that call LIVE: a stale UUID
+        // from a prior call must never swallow a fresh incoming call (that made
+        // the phone silently not ring). The call observer is the source of truth.
+        if let existing = activeCallUUID,
+           callController.callObserver.calls.contains(where: { $0.uuid == existing && !$0.hasEnded }) {
             provider.reportCall(with: existing, updated: update)
             completion()
             return
@@ -77,13 +79,13 @@ final class CallManager: NSObject, CXProviderDelegate {
     }
 
     func endActiveCall() {
-        guard let uuid = activeCallUUID else {
-            // No CallKit call to unwind (e.g. UI hang-up raced the report) —
-            // end at the SIP layer so the user is never stuck in a call.
-            SipEngine.shared.terminateAllCalls()
-            return
+        if let uuid = activeCallUUID {
+            callController.request(CXTransaction(action: CXEndCallAction(call: uuid))) { _ in }
         }
-        callController.request(CXTransaction(action: CXEndCallAction(call: uuid))) { _ in }
+        // Always tear down at the SIP layer and clear our handle so the NEXT
+        // incoming call is never blocked by a stale UUID (see reportIncomingCall).
+        SipEngine.shared.terminateAllCalls()
+        activeCallUUID = nil
     }
 
     /// In-call screen mute button — go through CallKit so the system stays in
