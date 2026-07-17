@@ -205,6 +205,15 @@ final class SipEngine {
             guard !first else { return }   // initial callback = current state, no rebind needed
             DispatchQueue.main.async {
                 guard let core = self.core else { return }
+                // NEVER toggle networkReachable during an active call —
+                // liblinphone reacts to it by pausing/resuming the call
+                // (hold/unhold re-INVITEs), which chops the live audio. A real
+                // network change mid-call is rare; if the path truly died the
+                // call drops on its own. Only rebind when idle.
+                guard !CallSession.shared.isActive else {
+                    self.log("network path changed (\(key)) — deferred (call active)")
+                    return
+                }
                 self.log("network path changed (\(key)) — rebinding")
                 core.networkReachable = false
                 core.networkReachable = true
