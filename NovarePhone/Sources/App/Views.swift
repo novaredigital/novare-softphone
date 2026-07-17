@@ -494,6 +494,34 @@ struct SettingsView: View {
                             }
                             Text([a.number, a.domain].compactMap { $0 }.joined(separator: " · "))
                                 .font(.caption).foregroundStyle(.secondary)
+                            TimelineView(.periodic(from: .now, by: 2)) { _ in
+                                HStack(spacing: 6) {
+                                    Circle()
+                                        .fill(SipEngine.shared.isAccountRegistered(i) ? Color.green : Color.orange)
+                                        .frame(width: 8, height: 8)
+                                    Text(SipEngine.shared.isAccountRegistered(i)
+                                         ? "Registered · \(SipEngine.shared.accountTransportInfo(i))"
+                                         : "Connecting… · \(SipEngine.shared.accountTransportInfo(i))")
+                                        .font(.caption2).foregroundStyle(.secondary)
+                                    Spacer()
+                                    Menu {
+                                        ForEach(["Auto", "UDP", "TCP", "TLS"], id: \.self) { m in
+                                            Button {
+                                                Task { await session.setTransportMode(m == "Auto" ? nil : m, at: i) }
+                                            } label: {
+                                                if (a.transportMode ?? "Auto") == m {
+                                                    Label(m, systemImage: "checkmark")
+                                                } else {
+                                                    Text(m)
+                                                }
+                                            }
+                                        }
+                                    } label: {
+                                        Text("Transport: \(a.transportMode ?? "Auto")")
+                                            .font(.caption2)
+                                    }
+                                }
+                            }
                         }
                         .contentShape(Rectangle())
                         .onTapGesture { session.activeIndex = i }
@@ -513,7 +541,7 @@ struct SettingsView: View {
                     }
                 }
                 Section {
-                    Text("Tap a line to make it the outbound line. Swipe left to rename or sign out. Use Edit (top right) to drag lines into your preferred order. Incoming calls ring on every line.")
+                    Text("Tap a line to make it the outbound line. Swipe left to rename or sign out. Use Edit (top right) to drag lines into your preferred order. Incoming calls ring on every line. Transport is Auto by default — if a network blocks calling traffic, the app finds a path that works (TCP or encrypted TLS) by itself; pick one manually only if support asks you to.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {

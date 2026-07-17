@@ -20,21 +20,21 @@
 	<string>1.0</string>
 	<key>CFBundleVersion</key>
 	<string>1</string>
-	<key>NSMicrophoneUsageDescription</key>
-	<string>Nováre Phone uses the microphone so you can talk on calls.</string>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
 	<key>NSCameraUsageDescription</key>
 	<string>Nováre Phone uses the camera only to scan your sign-in code.</string>
 	<key>NSContactsUsageDescription</key>
 	<string>Nováre Phone shows your contacts so you can call them from your work lines. Contacts never leave your phone.</string>
-	<key>UIFileSharingEnabled</key>
-	<true/>
-	<key>LSSupportsOpeningDocumentsInPlace</key>
-	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Nováre Phone uses the microphone so you can talk on calls.</string>
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>voip</string>
 		<string>audio</string>
 	</array>
+	<key>UIFileSharingEnabled</key>
+	<true/>
 	<key>UILaunchScreen</key>
 	<dict>
 		<key>UIColorName</key>

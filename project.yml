@@ -34,9 +34,13 @@ targets:
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_CFBundleDisplayName: "Nováre Phone"
         INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        TARGETED_DEVICE_FAMILY: "1"
+        INFOPLIST_KEY_UISupportedInterfaceOrientations: UIInterfaceOrientationPortrait
         INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents: YES
         # Simulator builds don't need signing; device/TestFlight adds it later.
         CODE_SIGN_STYLE: Automatic
+        # Signed entitlements (aps-environment) — required for VoIP push tokens.
+        CODE_SIGN_ENTITLEMENTS: NovarePhone/NovarePhone.entitlements
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
     info:
       path: NovarePhone/Info.plist

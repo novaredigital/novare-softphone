@@ -57,8 +57,17 @@ final class SipEngine {
     private var coreDelegate: CoreDelegate?
     private var currentCall: Call?
     private var linAccounts: [Account] = []
+    private var provisionings: [Provisioning] = []
     private var pathMonitor: NWPathMonitor?
     private var lastPathKey: String?
+
+    // Transport ladder — when a line can't register (some networks eat SIP on
+    // port 5060), fetch the server's transport list over HTTPS and walk it:
+    // QR transport -> TCP -> alt TCP -> TLS. The winner is persisted.
+    private struct Ladder { var tried: [String]; var candidates: [(t: String, p: Int)] }
+    private var ladders: [String: Ladder] = [:]
+    private var pendingChoice: [String: (t: String, p: Int)] = [:]
+    private var regTimers: [String: DispatchSourceTimer] = [:]
 
     private(set) var isConfigured = false
     var isRegistered: Bool {
@@ -105,6 +114,11 @@ final class SipEngine {
             core.clearAccounts()
             core.clearAllAuthInfo()
             linAccounts.removeAll()
+            provisionings = accounts
+            for t in regTimers.values { t.cancel() }
+            regTimers.removeAll()
+            ladders.removeAll()
+            pendingChoice.removeAll()
 
             for p in accounts {
                 let auth = try factory.createAuthInfo(username: p.username, userid: p.username,
@@ -114,7 +128,7 @@ final class SipEngine {
                 let params = try core.createAccountParams()
                 let identity = try factory.createAddress(addr: "sip:\(p.username)@\(p.domain)")
                 try params.setIdentityaddress(newValue: identity)
-                let serverUri = "sip:\(p.domain):\(p.port);transport=\(p.transport.lowercased())"
+                let serverUri = "sip:\(p.domain):\(p.effectivePort);transport=\(p.effectiveTransport.lowercased())"
                 let serverAddr = try factory.createAddress(addr: serverUri)
                 try params.setServeraddress(newValue: serverAddr)
                 params.registerEnabled = true
@@ -123,7 +137,8 @@ final class SipEngine {
                 let account = try core.createAccount(params: params)
                 try core.addAccount(account: account)
                 linAccounts.append(account)
-                log("account added \(p.username)@\(p.domain):\(p.port)/\(p.transport)")
+                log("account added \(p.username)@\(p.domain):\(p.effectivePort)/\(p.effectiveTransport)")
+                watchRegistration(key: p.key)
             }
             setOutboundAccount(activeIndex)
             isConfigured = true
@@ -175,10 +190,117 @@ final class SipEngine {
         pathMonitor = monitor
     }
 
+    // MARK: - Transport ladder
+
+    /// Human-readable transport a line is currently using (Settings shows it).
+    func accountTransportInfo(_ index: Int) -> String {
+        guard linAccounts.indices.contains(index),
+              let addr = linAccounts[index].params?.serverAddress else { return "" }
+        return "\(String(describing: addr.transport).uppercased()) :\(addr.port)"
+    }
+
+    /// Give a fresh registration ~10s; if the line is still not registered,
+    /// start (or continue) the ladder. Failed responses advance it sooner.
+    private func watchRegistration(key: String) {
+        regTimers[key]?.cancel()
+        let timer = DispatchSource.makeTimerSource(queue: .main)
+        timer.schedule(deadline: .now() + 10)
+        timer.setEventHandler { [weak self] in self?.registrationStalled(key: key) }
+        timer.resume()
+        regTimers[key] = timer
+    }
+
+    private func registrationStalled(key: String) {
+        guard let idx = provisionings.firstIndex(where: { $0.key == key }) else { return }
+        guard !isAccountRegistered(idx) else { return }
+        log("ladder: \(key) not registered after timeout")
+        advanceLadder(key: key)
+    }
+
+    fileprivate func handleRegistrationState(_ account: Account, _ state: RegistrationState, _ message: String) {
+        guard let idx = linAccounts.firstIndex(where: { $0 === account }),
+              provisionings.indices.contains(idx) else { return }
+        let p = provisionings[idx]
+        switch state {
+        case .Ok:
+            regTimers[p.key]?.cancel()
+            regTimers[p.key] = nil
+            if let win = pendingChoice[p.key] {
+                log("ladder: \(p.key) registered on \(win.t):\(win.p) — remembering it")
+                pendingChoice[p.key] = nil
+                Task { @MainActor in
+                    SessionStore.shared.transportLearned(key: p.key, transport: win.t, port: win.p)
+                }
+            }
+            ladders[p.key] = nil
+        case .Failed:
+            log("ladder: \(p.key) registration failed (\(message))")
+            advanceLadder(key: p.key)
+        default:
+            break
+        }
+    }
+
+    private func advanceLadder(key: String) {
+        guard let idx = provisionings.firstIndex(where: { $0.key == key }) else { return }
+        let p = provisionings[idx]
+        guard p.transportMode == nil else { return }   // manual pin: never ladder
+        if ladders[key] == nil {
+            ladders[key] = Ladder(tried: ["\(p.effectiveTransport):\(p.effectivePort)"], candidates: [])
+            Task { [weak self] in
+                // Fetched over HTTPS — gets through networks that eat SIP.
+                let list = await TransportDiscovery.fetch(apiBase: p.apiBase)
+                DispatchQueue.main.async {
+                    guard let self = self, self.ladders[key] != nil else { return }
+                    self.ladders[key]?.candidates = list.isEmpty
+                        ? [("TCP", p.port), ("TLS", 5061)]   // sane guesses if discovery is unreachable
+                        : list
+                    self.tryNextRung(key: key)
+                }
+            }
+            return
+        }
+        tryNextRung(key: key)
+    }
+
+    private func tryNextRung(key: String) {
+        guard var lad = ladders[key], !lad.candidates.isEmpty,
+              let idx = provisionings.firstIndex(where: { $0.key == key }),
+              linAccounts.indices.contains(idx), core != nil else { return }
+        let p = provisionings[idx]
+        guard let next = lad.candidates.first(where: { !lad.tried.contains("\($0.t):\($0.p)") }) else {
+            log("ladder: exhausted for \(key) — staying on \(p.effectiveTransport):\(p.effectivePort)")
+            ladders[key] = nil
+            return
+        }
+        lad.tried.append("\(next.t):\(next.p)")
+        ladders[key] = lad
+        log("ladder: trying \(next.t):\(next.p) for \(key)")
+        do {
+            let account = linAccounts[idx]
+            if let np = account.params?.clone() {
+                let serverUri = "sip:\(p.domain):\(next.p);transport=\(next.t.lowercased())"
+                let addr = try Factory.Instance.createAddress(addr: serverUri)
+                try np.setServeraddress(newValue: addr)
+                account.params = np
+                pendingChoice[key] = next
+                core?.refreshRegisters()
+                watchRegistration(key: key)
+            }
+        } catch {
+            log("ladder: applying \(next.t):\(next.p) failed: \(error)")
+        }
+    }
+
     func shutdown() {
         pathMonitor?.cancel()
         pathMonitor = nil
         lastPathKey = nil
+        for t in regTimers.values { t.cancel() }
+        regTimers.removeAll()
+        ladders.removeAll()
+        pendingChoice.removeAll()
+        provisionings.removeAll()
         core?.stop()
         core = nil
         coreDelegate = nil
@@ -352,5 +474,20 @@ private final class EngineCoreDelegate: CoreDelegate {
     }
     func onAccountRegistrationStateChanged(core: Core, account: Account, state: RegistrationState, message: String) {
         print("[SipEngine] registration -> \(state) \(message)")
+        engine?.handleRegistrationState(account, state, message)
+    }
+}
+
+/// Asks the line's own server (over HTTPS, which firewalls rarely block) what
+/// SIP transports it offers. Used by the ladder and the Settings pin.
+enum TransportDiscovery {
+    struct Entry: Codable { let transport: String; let port: Int }
+    struct Reply: Codable { let transports: [Entry] }
+    static func fetch(apiBase: URL) async -> [(t: String, p: Int)] {
+        var req = URLRequest(url: apiBase.appendingPathComponent("user/sip-transports"))
+        req.timeoutInterval = 6
+        guard let (data, _) = try? await URLSession.shared.data(for: req),
+              let reply = try? JSONDecoder().decode(Reply.self, from: data) else { return [] }
+        return reply.transports.map { ($0.transport.uppercased(), $0.port) }
     }
 }

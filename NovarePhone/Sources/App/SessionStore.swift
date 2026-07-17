@@ -14,7 +14,27 @@ struct Provisioning: Codable, Equatable {
     let tenantId: Int
     var number: String?         // the line's public phone number, when the QR carries it
 
+    // Transport ladder — how this line actually reaches its server. The QR's
+    // transport/port stay authoritative until the ladder learns better (some
+    // networks eat port-5060 SIP; the server offers TCP/alt-port/TLS too).
+    var transportMode: String?     // nil = Auto; "UDP"/"TCP"/"TLS" pins it (Settings)
+    var learnedTransport: String?  // last transport that actually registered
+    var learnedPort: Int?
+
     var key: String { "\(username)@\(domain)" }
+
+    /// What the engine should dial: a manual pin wins, then whatever the
+    /// ladder learned, then the QR's original values.
+    var effectiveTransport: String {
+        if let m = transportMode, m != "Auto" { return m }
+        return learnedTransport ?? transport
+    }
+    var effectivePort: Int {
+        let t = effectiveTransport
+        if t == learnedTransport, let lp = learnedPort { return lp }
+        if t == transport { return port }
+        return t == "TLS" ? 5061 : port   // conventional defaults until discovery resolves
+    }
 }
 
 @MainActor
@@ -107,6 +127,34 @@ final class SessionStore: ObservableObject {
         guard !clean.isEmpty else { return }
         accounts[index].accountName = clean
         try? Self.saveToKeychain(accounts, key: keychainKey)
+    }
+
+    /// Ladder result from the engine: persist what actually worked so the
+    /// next launch starts on the known-good transport immediately.
+    func transportLearned(key: String, transport: String, port: Int) {
+        guard let i = accounts.firstIndex(where: { $0.key == key }) else { return }
+        guard accounts[i].learnedTransport != transport || accounts[i].learnedPort != port else { return }
+        accounts[i].learnedTransport = transport
+        accounts[i].learnedPort = port
+        try? Self.saveToKeychain(accounts, key: keychainKey)
+    }
+
+    /// Settings: pin a line's transport ("UDP"/"TCP"/"TLS"), or nil for Auto.
+    /// A pin resolves its real port from the server's transport list first.
+    func setTransportMode(_ mode: String?, at index: Int) async {
+        guard accounts.indices.contains(index) else { return }
+        if let m = mode, m != "Auto" {
+            accounts[index].transportMode = m
+            let list = await TransportDiscovery.fetch(apiBase: accounts[index].apiBase)
+            accounts[index].learnedTransport = m
+            accounts[index].learnedPort = list.first(where: { $0.t == m })?.p
+        } else {
+            accounts[index].transportMode = nil
+            accounts[index].learnedTransport = nil
+            accounts[index].learnedPort = nil
+        }
+        try? Self.saveToKeychain(accounts, key: keychainKey)
+        SipEngine.shared.configure(accounts: accounts, activeIndex: activeIndex)
     }
 
     /// Settings: reorder lines. The active (outbound) line follows its account.
