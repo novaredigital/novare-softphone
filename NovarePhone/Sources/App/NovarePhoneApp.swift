@@ -22,24 +22,13 @@ struct NovarePhoneApp: App {
             }
         }
         .onChange(of: scenePhase) { phase in
-            // Push-wake handoff: when the app leaves the foreground with no
-            // active call, un-REGISTER so the PBX immediately push-wakes us
-            // for incoming calls (a stale binding would swallow them until it
-            // expired). Foreground re-registers. A background task buys the
-            // seconds the un-REGISTER needs to reach the server.
-            switch phase {
-            case .background:
-                guard !CallSession.shared.isActive else { break }
-                let task = UIApplication.shared.beginBackgroundTask(expirationHandler: nil)
-                SipEngine.shared.setBackgrounded(true)
-                DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
-                    UIApplication.shared.endBackgroundTask(task)
-                }
-            case .active:
-                SipEngine.shared.setBackgrounded(false)
-            default:
-                break
-            }
+            // Returning to the foreground: make sure we're registered (the
+            // binding may have lapsed while suspended). We deliberately do NOT
+            // un-register on background — a VoIP push launches/wakes the app in
+            // the background, and un-registering there would drop the very call
+            // the push is delivering. iOS suspends us on its own; the binding
+            // then expires and the PBX push-wakes us for the next call.
+            if phase == .active { SipEngine.shared.ensureRegistered() }
         }
     }
 }

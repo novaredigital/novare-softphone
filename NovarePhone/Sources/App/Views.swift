@@ -59,12 +59,12 @@ struct MainTabView: View {
         // tape button in the Keypad header — same screen, one tap away.
         TabView {
             FavoritesView().tabItem { Label("Favorites", systemImage: "star.fill") }
+            ExtensionsView().tabItem { Label("Ext", systemImage: "person.3.fill") }
             RecentsView().tabItem { Label("Recents", systemImage: "clock.fill") }
             ContactsView().tabItem { Label("Contacts", systemImage: "person.crop.circle") }
             DialerView().tabItem { Label("Keypad", systemImage: "circle.grid.3x3.fill") }
-            ExtensionsView().tabItem { Label("Ext", systemImage: "person.3.fill") }
         }
-        .fullScreenCover(isPresented: Binding(get: { call.isActive }, set: { if !$0 { } })) {
+        .fullScreenCover(isPresented: Binding(get: { call.showsInAppCallUI }, set: { if !$0 { } })) {
             InCallView().environmentObject(call)
         }
     }

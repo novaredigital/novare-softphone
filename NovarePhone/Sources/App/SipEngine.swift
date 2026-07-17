@@ -16,6 +16,19 @@ final class CallSession: ObservableObject {
     @Published var isSpeaker = false
     var isActive: Bool { phase != .idle }
 
+    /// Whether the app should draw its OWN full-screen call UI. Outgoing calls
+    /// get no system UI so the app draws its own; a connected call (answered
+    /// via CallKit) shows the in-call controls. But an UNANSWERED INCOMING
+    /// call belongs to CallKit's native accept/decline screen — the app must
+    /// NOT put up a competing screen (its only button was a red decline, which
+    /// looked like "answer" and rejected the call).
+    var showsInAppCallUI: Bool {
+        switch phase {
+        case .idle, .incoming: return false
+        default: return true
+        }
+    }
+
     // Recents bookkeeping — set by the SIP transitions below.
     fileprivate var direction: CallRecord.Direction = .outgoing
     fileprivate var beganAt: Date?
@@ -155,30 +168,17 @@ final class SipEngine {
         core.defaultAccount = linAccounts.indices.contains(index) ? linAccounts[index] : linAccounts.first
     }
 
-    /// REGISTER now (also invoked from a VoIP push so the PBX's push-wake
-    /// window sees our REGISTER and delivers the waiting call).
+    /// REGISTER now — invoked on foreground and from a VoIP push so the PBX's
+    /// push-wake window sees our REGISTER and delivers the waiting call. Makes
+    /// sure every line is register-enabled (a prior build could have disabled
+    /// them) before refreshing.
     func ensureRegistered() {
         guard let core = core else { return }
-        setBackgrounded(false)   // a push may arrive while backgrounded — re-enable first
+        for account in linAccounts where account.params?.registerEnabled == false {
+            if let np = account.params?.clone() { np.registerEnabled = true; account.params = np }
+        }
         core.refreshRegisters()
         log("ensureRegistered()")
-    }
-
-    /// Background = un-REGISTER every line (the PBX then push-wakes us for
-    /// incoming calls — a lingering binding would swallow them until expiry).
-    /// Foreground = re-enable and re-REGISTER. No-ops when state already matches.
-    private var isBackgrounded = false
-    func setBackgrounded(_ bg: Bool) {
-        guard bg != isBackgrounded, core != nil else { return }
-        isBackgrounded = bg
-        for account in linAccounts {
-            if let np = account.params?.clone() {
-                np.registerEnabled = !bg
-                account.params = np
-            }
-        }
-        core?.refreshRegisters()
-        log(bg ? "backgrounded — un-registering (push takes over)" : "foregrounded — re-registering")
     }
 
     /// WiFi ⇄ cellular handoff. Without this the Core's sockets stay bound to
