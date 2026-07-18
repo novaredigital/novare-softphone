@@ -43,6 +43,7 @@ final class AppDelegate: NSObject, UIApplicationDelegate, PKPushRegistryDelegate
         // Mandatory: report to CallKit BEFORE doing anything else.
         let caller = payload.dictionaryPayload["caller"] as? String ?? "Unknown"
         let callerName = payload.dictionaryPayload["callerName"] as? String ?? caller
+        AppLog.shared.write("[Push] VoIP push received: caller=\(caller)")
         CallManager.shared.reportIncomingCall(from: caller, displayName: callerName) {
             // With the call screen up, wake the SIP engine so the PBX's
             // push-wake window (20s) sees our REGISTER and delivers the call.

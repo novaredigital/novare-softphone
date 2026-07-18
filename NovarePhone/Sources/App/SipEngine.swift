@@ -68,7 +68,14 @@ final class SipEngine {
 
     private var core: Core?
     private var coreDelegate: CoreDelegate?
+    private var sdkLogForwarder: SdkLogForwarder?
     private var currentCall: Call?
+    private var statsTimer: DispatchSourceTimer?
+
+    /// Ghost-ring fix: set when the user answers a push-drawn CallKit ring
+    /// BEFORE the real SIP call has arrived (slow network). The INVITE is
+    /// answered automatically the moment it lands, inside this window.
+    private var autoAnswerDeadline: Date?
     private var linAccounts: [Account] = []
     private var provisionings: [Provisioning] = []
     private var pathMonitor: NWPathMonitor?
@@ -109,6 +116,14 @@ final class SipEngine {
         do {
             let factory = Factory.Instance
             if core == nil {
+                // Capture liblinphone's own warnings/errors into the
+                // diagnostics file (Settings → Send Diagnostics).
+                if sdkLogForwarder == nil {
+                    let fwd = SdkLogForwarder()
+                    LoggingService.Instance.logLevel = LogLevel.Warning
+                    LoggingService.Instance.addDelegate(delegate: fwd)
+                    sdkLogForwarder = fwd
+                }
                 let c = try factory.createCore(configPath: nil, factoryConfigPath: nil, systemContext: nil)
                 // Codecs: Opus + G.711 (matches the PBX). Audio only.
                 c.videoActivationPolicy?.automaticallyInitiate = false
@@ -185,6 +200,9 @@ final class SipEngine {
             if let np = account.params?.clone() { np.registerEnabled = true; account.params = np }
         }
         core.refreshRegisters()
+        // Same stall protection as a network change: if this register hangs
+        // (push-wake on a hostile network), ladder instead of waiting forever.
+        for p in provisionings { watchRegistration(key: p.key) }
         log("ensureRegistered()")
     }
 
@@ -219,6 +237,17 @@ final class SipEngine {
                 core.networkReachable = false
                 core.networkReachable = true
                 core.refreshRegisters()
+                // WiFi-stick fix: a transport that worked on the OLD network
+                // can silently hang on the new one (e.g. a home router that
+                // eats TLS:5061 — no failure event ever fires, so the line
+                // sat on "Connecting…" forever). New network = clean ladder
+                // slate + re-armed stall watchdog, so a stuck line falls
+                // back to a working transport within ~10s.
+                for p in self.provisionings {
+                    self.ladders[p.key] = nil
+                    self.pendingChoice[p.key] = nil
+                    self.watchRegistration(key: p.key)
+                }
             }
         }
         monitor.start(queue: DispatchQueue.global(qos: .utility))
@@ -361,6 +390,16 @@ final class SipEngine {
         } catch { log("placeCall failed: \(error)") }
     }
 
+    /// True only when a real SIP call is here and ringing.
+    var hasRingingSipCall: Bool { currentCall?.state == .IncomingReceived }
+
+    /// The user answered the CallKit ring but the SIP call isn't here yet —
+    /// remember the intent; handleCallState accepts the INVITE when it lands.
+    func armAutoAnswer(seconds: TimeInterval) {
+        autoAnswerDeadline = Date().addingTimeInterval(seconds)
+        log("auto-answer armed \(Int(seconds))s (answered before SIP call arrived)")
+    }
+
     func answerCall() {
         guard let core = core, let call = currentCall else { return }
         do {
@@ -378,6 +417,7 @@ final class SipEngine {
         do { try core?.terminateAllCalls(); log("terminateAllCalls()") }
         catch { log("terminate failed: \(error)") }
         currentCall = nil
+        autoAnswerDeadline = nil
     }
 
     func setMuted(_ muted: Bool) { core?.micEnabled = !muted; log("setMuted(\(muted))") }
@@ -466,6 +506,17 @@ final class SipEngine {
                 CallSession.shared.phase = .incoming
             }
             onIncomingCall?(remote, name)
+            // Ghost-ring fix: the user already answered the push-drawn ring —
+            // accept this just-arrived SIP call right now.
+            if let deadline = autoAnswerDeadline {
+                autoAnswerDeadline = nil
+                if deadline > Date() {
+                    log("auto-answer: SIP call arrived after CallKit answer — accepting")
+                    answerCall()
+                } else {
+                    log("auto-answer: SIP call arrived too late (window expired)")
+                }
+            }
         case .OutgoingInit, .OutgoingProgress:
             currentCall = call
             Task { @MainActor in
@@ -484,8 +535,11 @@ final class SipEngine {
                     CallSession.shared.phase = .connected(now)
                 }
             }
+            startStatsLogging()
             onCallConnected?()
         case .End, .Error, .Released:
+            stopStatsLogging()
+            logCallStats(call, label: "final")
             Task { @MainActor in CallSession.shared.reset() }
             onCallEnded?()
             if call === currentCall { currentCall = nil }
@@ -494,7 +548,46 @@ final class SipEngine {
         }
     }
 
-    private func log(_ s: String) { print("[SipEngine] \(s)") }
+    // MARK: - In-call quality logging (diagnostics)
+
+    /// Every 5s during a call, write signal-quality numbers to the log —
+    /// this is how we see what a bad call looked like from the PHONE's side.
+    private func startStatsLogging() {
+        guard statsTimer == nil else { return }
+        let t = DispatchSource.makeTimerSource(queue: .main)
+        t.schedule(deadline: .now() + 5, repeating: 5)
+        t.setEventHandler { [weak self] in
+            guard let self = self, let call = self.currentCall else { return }
+            self.logCallStats(call, label: "live")
+        }
+        t.resume()
+        statsTimer = t
+    }
+
+    private func stopStatsLogging() {
+        statsTimer?.cancel()
+        statsTimer = nil
+    }
+
+    private func logCallStats(_ call: Call, label: String) {
+        let q = call.currentQuality
+        if let s = call.audioStats {
+            log(String(format: "call-stats(%@) quality=%.1f/5 down=%.0fkbit up=%.0fkbit loss-sent=%.1f%% loss-recv=%.1f%% jitter=%.0fms",
+                       label, q, s.downloadBandwidth, s.uploadBandwidth,
+                       s.senderLossRate, s.receiverLossRate, s.jitterBufferSizeMs))
+        } else {
+            log(String(format: "call-stats(%@) quality=%.1f/5 (no audio stats)", label, q))
+        }
+    }
+
+    private func log(_ s: String) { AppLog.shared.write("[SipEngine] \(s)") }
+}
+
+/// Forwards liblinphone's own warnings/errors into the diagnostics file.
+private final class SdkLogForwarder: LoggingServiceDelegate {
+    func onLogMessageWritten(logService: LoggingService, domain: String, level: LogLevel, message: String) {
+        AppLog.shared.write("[linphone/\(domain)] \(message)")
+    }
 }
 
 /// Concrete CoreDelegate that forwards call-state changes to the engine.
@@ -508,7 +601,7 @@ private final class EngineCoreDelegate: CoreDelegate {
         engine?.handleCallState(call, state)
     }
     func onAccountRegistrationStateChanged(core: Core, account: Account, state: RegistrationState, message: String) {
-        print("[SipEngine] registration -> \(state) \(message)")
+        AppLog.shared.write("[SipEngine] registration -> \(state) \(message)")
         engine?.handleRegistrationState(account, state, message)
     }
 }

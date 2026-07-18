@@ -52,12 +52,14 @@ final class CallManager: NSObject, CXProviderDelegate {
         // the phone silently not ring). The call observer is the source of truth.
         if let existing = activeCallUUID,
            callController.callObserver.calls.contains(where: { $0.uuid == existing && !$0.hasEnded }) {
+            AppLog.shared.write("[CallManager] incoming update (existing call) from \(number)")
             provider.reportCall(with: existing, updated: update)
             completion()
             return
         }
         let uuid = UUID()
         activeCallUUID = uuid
+        AppLog.shared.write("[CallManager] incoming reported to CallKit from \(number)")
         provider.reportNewIncomingCall(with: uuid, update: update) { _ in completion() }
     }
 
@@ -105,7 +107,26 @@ final class CallManager: NSObject, CXProviderDelegate {
     }
 
     func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
-        SipEngine.shared.answerCall()
+        if SipEngine.shared.hasRingingSipCall {
+            SipEngine.shared.answerCall()
+        } else {
+            // Ghost-ring fix: the push drew the ring screen but the real SIP
+            // call hasn't arrived yet (slow network). Answering used to be a
+            // no-op — dead air while the call drifted to voicemail. Instead:
+            // hold the CallKit call as "connecting", auto-answer the SIP call
+            // the moment it lands, and end cleanly if it never does.
+            AppLog.shared.write("[CallManager] answered before SIP call arrived — holding, auto-answer armed")
+            SipEngine.shared.armAutoAnswer(seconds: 20)
+            let uuid = action.callUUID
+            DispatchQueue.main.asyncAfter(deadline: .now() + 20) { [weak self] in
+                guard let self = self, self.activeCallUUID == uuid else { return }
+                if case .connected = CallSession.shared.phase { return }
+                AppLog.shared.write("[CallManager] no SIP call within 20s of answer — ending cleanly")
+                self.provider.reportCall(with: uuid, endedAt: nil, reason: .failed)
+                SipEngine.shared.terminateAllCalls()
+                self.activeCallUUID = nil
+            }
+        }
         action.fulfill()
     }
 

@@ -14,6 +14,7 @@
 		73F535BE5C55DD6990C9EF7A /* CallHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FF830A1A03DD302508BFFF9 /* CallHistory.swift */; };
 		7EB341DA4C0BB8963AD6CA2B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FE6B64BE1B6B684714147BC /* AppDelegate.swift */; };
 		9A42BDA143189500E51536FF /* CallManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D61289447EC7B31B41547D /* CallManager.swift */; };
+		B1544CD1D8ABAEFDE8A8E730 /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40A94BFB24EB9AD6CC8315D7 /* AppLog.swift */; };
 		B1931DA909921B8CCE457E8E /* SipEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0BE095408718A35EFAF55A /* SipEngine.swift */; };
 		B5DEF26F51C2A3D077B3C96A /* ExtensionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45752F64832C63E88E51A5B3 /* ExtensionsView.swift */; };
 		C856907C78333D2CAC0F01FB /* SessionStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = AED1EE6011B9A0662C26A046 /* SessionStore.swift */; };
@@ -23,6 +24,7 @@
 /* Begin PBXFileReference section */
 		26F567AA5C1C5F7D2C2D87A4 /* ContactsAndFavorites.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContactsAndFavorites.swift; sourceTree = "<group>"; };
 		29ED53C5B0365249F436ACC7 /* NovarePhoneApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NovarePhoneApp.swift; sourceTree = "<group>"; };
+		40A94BFB24EB9AD6CC8315D7 /* AppLog.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLog.swift; sourceTree = "<group>"; };
 		42D61289447EC7B31B41547D /* CallManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallManager.swift; sourceTree = "<group>"; };
 		45752F64832C63E88E51A5B3 /* ExtensionsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExtensionsView.swift; sourceTree = "<group>"; };
 		5DFA31AF26395F64D98DF4C6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
@@ -67,6 +69,7 @@
 			isa = PBXGroup;
 			children = (
 				5FE6B64BE1B6B684714147BC /* AppDelegate.swift */,
+				40A94BFB24EB9AD6CC8315D7 /* AppLog.swift */,
 				9FF830A1A03DD302508BFFF9 /* CallHistory.swift */,
 				42D61289447EC7B31B41547D /* CallManager.swift */,
 				26F567AA5C1C5F7D2C2D87A4 /* ContactsAndFavorites.swift */,
@@ -172,6 +175,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				7EB341DA4C0BB8963AD6CA2B /* AppDelegate.swift in Sources */,
+				B1544CD1D8ABAEFDE8A8E730 /* AppLog.swift in Sources */,
 				73F535BE5C55DD6990C9EF7A /* CallHistory.swift in Sources */,
 				9A42BDA143189500E51536FF /* CallManager.swift in Sources */,
 				17517ED26A32BD920CA5E3FD /* ContactsAndFavorites.swift in Sources */,
@@ -243,7 +247,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 8S8JBLPQ9Z;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -263,7 +267,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 1.0.10;
+				MARKETING_VERSION = 1.0.11;
 				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
 				MTL_FAST_MATH = YES;
 				ONLY_ACTIVE_ARCH = YES;
@@ -332,7 +336,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 10;
+				CURRENT_PROJECT_VERSION = 11;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 8S8JBLPQ9Z;
 				ENABLE_NS_ASSERTIONS = NO;
@@ -346,7 +350,7 @@
 				GCC_WARN_UNUSED_FUNCTION = YES;
 				GCC_WARN_UNUSED_VARIABLE = YES;
 				IPHONEOS_DEPLOYMENT_TARGET = 16.0;
-				MARKETING_VERSION = 1.0.10;
+				MARKETING_VERSION = 1.0.11;
 				MTL_ENABLE_DEBUG_INFO = NO;
 				MTL_FAST_MATH = YES;
 				PRODUCT_NAME = "$(TARGET_NAME)";

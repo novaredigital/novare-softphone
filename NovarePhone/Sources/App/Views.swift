@@ -560,6 +560,13 @@ struct SettingsView: View {
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Section {
+                    ShareLink(items: AppLog.shared.shareFiles) {
+                        Label("Send Diagnostics to Support", systemImage: "square.and.arrow.up")
+                    }
+                    Text("After a problem call, tap this and send the file by text message. It contains the app's activity record — exactly what support needs to see what happened.")
+                        .font(.caption).foregroundStyle(.secondary)
+                } header: { Text("Diagnostics") }
+                Section {
                     NavigationLink {
                         AboutView()
                     } label: {
