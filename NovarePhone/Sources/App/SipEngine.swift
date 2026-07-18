@@ -94,6 +94,18 @@ final class SipEngine {
         core?.defaultAccount?.state == .Ok
     }
 
+    /// Set every time a REGISTER succeeds. A registration confirmed seconds
+    /// ago proves the server connection is alive RIGHT NOW.
+    private(set) var lastRegisterOkAt: Date?
+
+    /// True when the connection was confirmed alive within the last 45s
+    /// (the app re-registers every ~30s while open, so an open app is always
+    /// fresh; a suspended app's timers froze, so it reads stale and refreshes).
+    var hasFreshRegistration: Bool {
+        guard isRegistered, let t = lastRegisterOkAt else { return false }
+        return Date().timeIntervalSince(t) < 45
+    }
+
     func isAccountRegistered(_ index: Int) -> Bool {
         linAccounts.indices.contains(index) && linAccounts[index].state == .Ok
     }
@@ -287,6 +299,7 @@ final class SipEngine {
         let p = provisionings[idx]
         switch state {
         case .Ok:
+            lastRegisterOkAt = Date()
             regTimers[p.key]?.cancel()
             regTimers[p.key] = nil
             if let win = pendingChoice[p.key] {
@@ -392,6 +405,15 @@ final class SipEngine {
 
     /// True only when a real SIP call is here and ringing.
     var hasRingingSipCall: Bool { currentCall?.state == .IncomingReceived }
+
+    /// Locked-answer audio fix: CallKit hands us the audio session on answer,
+    /// but liblinphone must CONFIGURE it before the call accepts — otherwise
+    /// on a lock-screen answer it can't find the speaker/mic ("could not find
+    /// the matching device") and the call is dead silent until unlock.
+    func prepareAudioSession() {
+        core?.configureAudioSession()
+        log("prepareAudioSession()")
+    }
 
     /// The user answered the CallKit ring but the SIP call isn't here yet —
     /// remember the intent; handleCallState accepts the INVITE when it lands.

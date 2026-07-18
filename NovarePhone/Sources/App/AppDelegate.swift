@@ -45,9 +45,17 @@ final class AppDelegate: NSObject, UIApplicationDelegate, PKPushRegistryDelegate
         let callerName = payload.dictionaryPayload["callerName"] as? String ?? caller
         AppLog.shared.write("[Push] VoIP push received: caller=\(caller)")
         CallManager.shared.reportIncomingCall(from: caller, displayName: callerName) {
-            // With the call screen up, wake the SIP engine so the PBX's
-            // push-wake window (20s) sees our REGISTER and delivers the call.
-            SipEngine.shared.ensureRegistered()
+            // Lost-answer fix: if the connection was confirmed alive seconds
+            // ago (open app), do NOT rebuild it — the reflexive re-register
+            // was tearing down the very connection the incoming call and our
+            // answer were about to use, so the PBX never saw the answer and
+            // rolled to voicemail. Only refresh when the registration is
+            // actually stale (app was suspended; timers frozen).
+            if SipEngine.shared.hasFreshRegistration {
+                AppLog.shared.write("[Push] connection fresh — riding it, no re-register")
+            } else {
+                SipEngine.shared.ensureRegistered()
+            }
             completion()
         }
     }

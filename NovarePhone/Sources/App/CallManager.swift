@@ -107,6 +107,9 @@ final class CallManager: NSObject, CXProviderDelegate {
     }
 
     func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
+        // Must run BEFORE accepting: wires liblinphone into the CallKit audio
+        // session so lock-screen answers get sound (the locked-silence bug).
+        SipEngine.shared.prepareAudioSession()
         if SipEngine.shared.hasRingingSipCall {
             SipEngine.shared.answerCall()
         } else {
