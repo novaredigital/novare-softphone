@@ -76,6 +76,13 @@ final class SipEngine {
     /// BEFORE the real SIP call has arrived (slow network). The INVITE is
     /// answered automatically the moment it lands, inside this window.
     private var autoAnswerDeadline: Date?
+
+    /// Whether CallKit has handed us the AVAudioSession (provider didActivate).
+    /// CallKit sometimes never delivers it — seen when the answer raced the
+    /// INVITE (auto-answer path): the call connects but liblinphone runs with
+    /// no mic/speaker → dead air both ways while the socket keeps sending
+    /// keepalives. The watchdog below recovers that case.
+    private var audioSessionIsActive = false
     private var linAccounts: [Account] = []
     private var provisionings: [Provisioning] = []
     private var pathMonitor: NWPathMonitor?
@@ -456,8 +463,26 @@ final class SipEngine {
 
     func audioSessionActivated(_ active: Bool) {
         // CallKit owns the AVAudioSession; hand activation to liblinphone.
+        audioSessionIsActive = active
         core?.activateAudioSession(activated: active)
         log("audioSession(\(active))")
+    }
+
+    /// Audio watchdog: 1.5s after a call connects, if CallKit still hasn't
+    /// activated the audio session, take it ourselves — a silent recovery
+    /// beats a connected call with no audio.
+    private func armAudioWatchdog() {
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self = self, let core = self.core,
+                  let call = self.currentCall,
+                  call.state == .Connected || call.state == .StreamsRunning,
+                  !self.audioSessionIsActive else { return }
+            self.log("[AudioWatchdog] CallKit never activated the audio session — force-activating")
+            core.configureAudioSession()
+            try? AVAudioSession.sharedInstance().setActive(true)
+            self.audioSessionIsActive = true
+            core.activateAudioSession(activated: true)
+        }
     }
 
     /// Voicemail one-touch — *97 on every Nováre PBX.
@@ -557,6 +582,7 @@ final class SipEngine {
                     CallSession.shared.phase = .connected(now)
                 }
             }
+            armAudioWatchdog()
             startStatsLogging()
             onCallConnected?()
         case .End, .Error, .Released:
@@ -564,7 +590,12 @@ final class SipEngine {
             logCallStats(call, label: "final")
             Task { @MainActor in CallSession.shared.reset() }
             onCallEnded?()
-            if call === currentCall { currentCall = nil }
+            if call === currentCall {
+                currentCall = nil
+                // CallKit's didDeactivate never fires for a session it never
+                // activated — reset so the NEXT call's watchdog can arm.
+                audioSessionIsActive = false
+            }
         default:
             break
         }

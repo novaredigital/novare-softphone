@@ -10,6 +10,7 @@ final class CallManager: NSObject, CXProviderDelegate {
     private let provider: CXProvider
     private let callController = CXCallController()
     private var activeCallUUID: UUID?
+    private var lastReportedAt: Date?
 
     private override init() {
         let config = CXProviderConfiguration()
@@ -50,15 +51,25 @@ final class CallManager: NSObject, CXProviderDelegate {
         // call instead. BUT only if iOS still has that call LIVE: a stale UUID
         // from a prior call must never swallow a fresh incoming call (that made
         // the phone silently not ring). The call observer is the source of truth.
-        if let existing = activeCallUUID,
-           callController.callObserver.calls.contains(where: { $0.uuid == existing && !$0.hasEnded }) {
-            AppLog.shared.write("[CallManager] incoming update (existing call) from \(number)")
-            provider.reportCall(with: existing, updated: update)
-            completion()
-            return
+        if let existing = activeCallUUID {
+            let observerLive = callController.callObserver.calls.contains { $0.uuid == existing && !$0.hasEnded }
+            // The call observer updates asynchronously: two forks of the same
+            // call can land within milliseconds, before the observer has seen
+            // the first report — which reported a SECOND CXCall (swap UI, and
+            // CallKit never activated the audio session → dead air). Treat a
+            // report from the last few seconds as live even if the observer
+            // hasn't caught up yet.
+            let justReported = lastReportedAt.map { Date().timeIntervalSince($0) < 3 } ?? false
+            if observerLive || justReported {
+                AppLog.shared.write("[CallManager] incoming update (existing call) from \(number)")
+                provider.reportCall(with: existing, updated: update)
+                completion()
+                return
+            }
         }
         let uuid = UUID()
         activeCallUUID = uuid
+        lastReportedAt = Date()
         AppLog.shared.write("[CallManager] incoming reported to CallKit from \(number)")
         provider.reportNewIncomingCall(with: uuid, update: update) { _ in completion() }
     }
@@ -88,6 +99,7 @@ final class CallManager: NSObject, CXProviderDelegate {
         // incoming call is never blocked by a stale UUID (see reportIncomingCall).
         SipEngine.shared.terminateAllCalls()
         activeCallUUID = nil
+        lastReportedAt = nil
     }
 
     /// In-call screen mute button — go through CallKit so the system stays in
@@ -104,6 +116,7 @@ final class CallManager: NSObject, CXProviderDelegate {
     func providerDidReset(_ provider: CXProvider) {
         SipEngine.shared.terminateAllCalls()
         activeCallUUID = nil
+        lastReportedAt = nil
     }
 
     func provider(_ provider: CXProvider, perform action: CXAnswerCallAction) {
@@ -136,6 +149,7 @@ final class CallManager: NSObject, CXProviderDelegate {
     func provider(_ provider: CXProvider, perform action: CXEndCallAction) {
         SipEngine.shared.terminateAllCalls()
         activeCallUUID = nil
+        lastReportedAt = nil
         action.fulfill()
     }
 
