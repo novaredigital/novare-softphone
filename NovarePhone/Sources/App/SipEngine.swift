@@ -87,6 +87,10 @@ final class SipEngine {
     private var provisionings: [Provisioning] = []
     private var pathMonitor: NWPathMonitor?
     private var lastPathKey: String?
+    // HANDOFF 1.0.14 — mid-call network-change repair state
+    private var handoffGeneration = 0
+    private var lastMidCallRebind = Date.distantPast
+    private(set) var lastPathChangeAt = Date.distantPast
 
     // Transport ladder — when a line can't register (some networks eat SIP on
     // port 5060), fetch the server's transport list over HTTPS and walk it:
@@ -243,13 +247,17 @@ final class SipEngine {
             guard !first else { return }   // initial callback = current state, no rebind needed
             DispatchQueue.main.async {
                 guard let core = self.core else { return }
-                // NEVER toggle networkReachable during an active call —
-                // liblinphone reacts to it by pausing/resuming the call
-                // (hold/unhold re-INVITEs), which chops the live audio. A real
-                // network change mid-call is rare; if the path truly died the
-                // call drops on its own. Only rebind when idle.
+                self.lastPathChangeAt = Date()
+                // HANDOFF 1.0.14: a mid-call network change used to be ignored
+                // here ("the call drops on its own") — WiFi⇄cellular flapping
+                // proved that hangs up live calls. The PBX now answers mid-call
+                // re-INVITEs side-aware (REINVITE-V1 2026-07-21), so the right
+                // move is a debounced, call-preserving rebind + re-INVITE. The
+                // old blanket guard stays gone; the rate limit inside
+                // scheduleMidCallHandoff() prevents the b7 audio-chop loop.
                 guard !CallSession.shared.isActive else {
-                    self.log("network path changed (\(key)) — deferred (call active)")
+                    self.log("network path changed (\(key)) — call active, scheduling handoff repair")
+                    self.scheduleMidCallHandoff()
                     return
                 }
                 self.log("network path changed (\(key)) — rebinding")
@@ -271,6 +279,49 @@ final class SipEngine {
         }
         monitor.start(queue: DispatchQueue.global(qos: .utility))
         pathMonitor = monitor
+    }
+
+    /// HANDOFF 1.0.14 — carrier-grade mid-call network handoff (WiFi⇄cellular).
+    /// Debounce the path flap (~1.5s), then rebind the Core's sockets on the
+    /// new network, re-REGISTER, and force a re-INVITE for every live call so
+    /// the PBX re-points our audio to the new path (the server handles this
+    /// side-aware since REINVITE-V1). Rate-limited so a flapping network can't
+    /// chop audio with back-to-back re-INVITEs (the old b7 failure mode).
+    private func scheduleMidCallHandoff() {
+        handoffGeneration += 1
+        let gen = handoffGeneration
+        // Debounce: each new path flap bumps the generation; only the LAST
+        // scheduled closure (matching gen) runs, 1.5s after the flap settles.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
+            guard let self = self, gen == self.handoffGeneration, let core = self.core else { return }
+            guard CallSession.shared.isActive else {
+                // Call ended while the path settled — do the normal idle rebind.
+                self.log("[HANDOFF] call ended during settle — idle rebind")
+                core.networkReachable = false
+                core.networkReachable = true
+                core.refreshRegisters()
+                return
+            }
+            guard Date().timeIntervalSince(self.lastMidCallRebind) > 4 else {
+                self.log("[HANDOFF] suppressed (rebound <4s ago)")
+                return
+            }
+            self.lastMidCallRebind = Date()
+            self.log("[HANDOFF] mid-call network change — rebinding + repairing call")
+            core.networkReachable = false
+            core.networkReachable = true
+            core.refreshRegisters()
+            // Give the fresh REGISTER a moment, then re-INVITE the live calls.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                guard let self = self, let core = self.core else { return }
+                for call in core.calls where call.state == .StreamsRunning || call.state == .PausedByRemote {
+                    do {
+                        try call.update(params: core.createCallParams(call: call))
+                        self.log("[HANDOFF] re-INVITE sent for live call")
+                    } catch { self.log("[HANDOFF] call.update failed: \(error)") }
+                }
+            }
+        }
     }
 
     // MARK: - Transport ladder
@@ -397,7 +448,23 @@ final class SipEngine {
     // MARK: - Call control (invoked by CallManager only)
 
     func placeCall(to number: String) {
+        placeCall(to: number, attempt: 0)
+    }
+
+    private func placeCall(to number: String, attempt: Int) {
         guard let core = core else { return }
+        // HANDOFF 1.0.14: dialing in the first seconds after a network hop used
+        // to fire the INVITE into a dead/rebinding socket (Erik's two dead-air
+        // calls, 2026-07-21). If we just hopped and the line isn't registered
+        // yet, wait for the fresh REGISTER (up to ~4s) before dialing; after
+        // that, dial anyway so a genuinely down line still fails visibly.
+        if Date().timeIntervalSince(lastPathChangeAt) < 3 && !isRegistered && attempt < 8 {
+            log("placeCall(\(number)) deferred — network hop settling (attempt \(attempt))")
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) { [weak self] in
+                self?.placeCall(to: number, attempt: attempt + 1)
+            }
+            return
+        }
         do {
             guard let addr = core.interpretUrl(url: "sip:\(number)@\(core.defaultAccount?.params?.domain ?? "")", applyInternationalPrefix: false) else {
                 log("placeCall failed: bad address for \(number)"); return
