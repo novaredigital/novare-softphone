@@ -87,9 +87,8 @@ final class SipEngine {
     private var provisionings: [Provisioning] = []
     private var pathMonitor: NWPathMonitor?
     private var lastPathKey: String?
-    // HANDOFF 1.0.14 — mid-call network-change repair state
-    private var handoffGeneration = 0
-    private var lastMidCallRebind = Date.distantPast
+    // HANDOFF 1.0.14 — mid-call network-change state
+    private var pendingRebindAfterCall = false
     private(set) var lastPathChangeAt = Date.distantPast
 
     // Transport ladder — when a line can't register (some networks eat SIP on
@@ -256,8 +255,16 @@ final class SipEngine {
                 // old blanket guard stays gone; the rate limit inside
                 // scheduleMidCallHandoff() prevents the b7 audio-chop loop.
                 guard !CallSession.shared.isActive else {
-                    self.log("network path changed (\(key)) — call active, scheduling handoff repair")
-                    self.scheduleMidCallHandoff()
+                    // HANDOFF v2: do NOT touch the Core mid-call. liblinphone's
+                    // internal monitor already repairs the live call with a
+                    // clean in-dialog re-INVITE (field-proven 2026-07-21), and
+                    // the PBX relay re-latches media from the new source within
+                    // ~1s. Toggling networkReachable here made liblinphone
+                    // CANCEL + re-place the call instead (far end re-rung /
+                    // announcement restarted). Just remember to rebind + reset
+                    // the ladder AFTER the call ends.
+                    self.pendingRebindAfterCall = true
+                    self.log("network path changed (\(key)) — call active, rebind deferred to call end")
                     return
                 }
                 self.log("network path changed (\(key)) — rebinding")
@@ -281,46 +288,24 @@ final class SipEngine {
         pathMonitor = monitor
     }
 
-    /// HANDOFF 1.0.14 — carrier-grade mid-call network handoff (WiFi⇄cellular).
-    /// Debounce the path flap (~1.5s), then rebind the Core's sockets on the
-    /// new network, re-REGISTER, and force a re-INVITE for every live call so
-    /// the PBX re-points our audio to the new path (the server handles this
-    /// side-aware since REINVITE-V1). Rate-limited so a flapping network can't
-    /// chop audio with back-to-back re-INVITEs (the old b7 failure mode).
-    private func scheduleMidCallHandoff() {
-        handoffGeneration += 1
-        let gen = handoffGeneration
-        // Debounce: each new path flap bumps the generation; only the LAST
-        // scheduled closure (matching gen) runs, 1.5s after the flap settles.
-        DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { [weak self] in
-            guard let self = self, gen == self.handoffGeneration, let core = self.core else { return }
-            guard CallSession.shared.isActive else {
-                // Call ended while the path settled — do the normal idle rebind.
-                self.log("[HANDOFF] call ended during settle — idle rebind")
-                core.networkReachable = false
-                core.networkReachable = true
-                core.refreshRegisters()
-                return
-            }
-            guard Date().timeIntervalSince(self.lastMidCallRebind) > 4 else {
-                self.log("[HANDOFF] suppressed (rebound <4s ago)")
-                return
-            }
-            self.lastMidCallRebind = Date()
-            self.log("[HANDOFF] mid-call network change — rebinding + repairing call")
-            core.networkReachable = false
-            core.networkReachable = true
-            core.refreshRegisters()
-            // Give the fresh REGISTER a moment, then re-INVITE the live calls.
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
-                guard let self = self, let core = self.core else { return }
-                for call in core.calls where call.state == .StreamsRunning || call.state == .PausedByRemote {
-                    do {
-                        try call.update(params: core.createCallParams(call: call))
-                        self.log("[HANDOFF] re-INVITE sent for live call")
-                    } catch { self.log("[HANDOFF] call.update failed: \(error)") }
-                }
-            }
+    /// HANDOFF 1.0.14 v2 — the mid-call repair itself is left to liblinphone's
+    /// internal network monitor (clean in-dialog re-INVITE, which the PBX now
+    /// answers side-aware, REINVITE-V1) + the relay's source re-latch. Our job
+    /// is only what liblinphone does NOT do: the transport-ladder reset and
+    /// full rebind the app normally performs on a path change, deferred until
+    /// the call ends so it can't disturb live audio (the old code dropped it
+    /// entirely — the next dial after a mid-call hop fired into a dead socket).
+    private func performDeferredRebindIfNeeded() {
+        guard pendingRebindAfterCall, let core = core else { return }
+        pendingRebindAfterCall = false
+        log("[HANDOFF] call ended after a mid-call network change — rebinding now")
+        core.networkReachable = false
+        core.networkReachable = true
+        core.refreshRegisters()
+        for p in provisionings {
+            ladders[p.key] = nil
+            pendingChoice[p.key] = nil
+            watchRegistration(key: p.key)
         }
     }
 
@@ -657,6 +642,7 @@ final class SipEngine {
             logCallStats(call, label: "final")
             Task { @MainActor in CallSession.shared.reset() }
             onCallEnded?()
+            performDeferredRebindIfNeeded()   // HANDOFF: rebind held back during the call
             if call === currentCall {
                 currentCall = nil
                 // CallKit's didDeactivate never fires for a session it never
