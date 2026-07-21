@@ -228,6 +228,50 @@ final class SipEngine {
         log("ensureRegistered()")
     }
 
+    // REG-HEARTBEAT 1.0.14: while the app is open, self-heal a lapsed
+    // registration WITHOUT the user having to background/foreground it. The app
+    // otherwise only re-REGISTERs on launch, foreground, or a network-INTERFACE
+    // change — so when cell/WiFi signal goes weak and then recovers on the SAME
+    // radio (no interface event fires), an open app could sit "not registered"
+    // until the user tapped back into it (Erik's "go back and look" case). This
+    // timer checks every 25s whether the registration actually lapsed (older
+    // than the 60s expiry cycle = a real failure, not the normal refresh) and
+    // forces a re-REGISTER. Runs ONLY while active — iOS suspends a backgrounded
+    // app and freezes this timer; the PBX push-wake (fresh token) covers
+    // incoming calls in that window. No iOS softphone holds a registration while
+    // suspended; this just shrinks the "app open but unregistered" window to ~0.
+    private var regHeartbeat: DispatchSourceTimer?
+
+    func startRegistrationHeartbeat() {
+        guard core != nil, !provisionings.isEmpty else { return }
+        regHeartbeat?.cancel()
+        let t = DispatchSource.makeTimerSource(queue: .main)
+        t.schedule(deadline: .now() + 25, repeating: 25)
+        t.setEventHandler { [weak self] in
+            DispatchQueue.main.async {
+                guard let self = self, let core = self.core, !self.provisionings.isEmpty else { return }
+                // Don't churn mid-call — the media path is what matters then.
+                if CallSession.shared.isActive { return }
+                let age = Date().timeIntervalSince(self.lastRegisterOkAt ?? .distantPast)
+                // >70s = beyond the 60s expiry + a normal ~53s refresh, i.e. a
+                // genuine lapse, not the routine cycle. Only then re-REGISTER.
+                if !self.isRegistered || age > 70 {
+                    self.log("[REG-HEARTBEAT] stale (registered=\(self.isRegistered), age=\(Int(age))s) — forcing re-REGISTER")
+                    core.refreshRegisters()
+                    for p in self.provisionings { self.watchRegistration(key: p.key) }
+                }
+            }
+        }
+        t.resume()
+        regHeartbeat = t
+        log("[REG-HEARTBEAT] started (25s)")
+    }
+
+    func stopRegistrationHeartbeat() {
+        regHeartbeat?.cancel()
+        regHeartbeat = nil
+    }
+
 
     /// WiFi ⇄ cellular handoff. Without this the Core's sockets stay bound to
     /// the network the app registered on — away from home, dialing goes into

@@ -28,7 +28,12 @@ struct NovarePhoneApp: App {
             // the background, and un-registering there would drop the very call
             // the push is delivering. iOS suspends us on its own; the binding
             // then expires and the PBX push-wakes us for the next call.
-            if phase == .active { SipEngine.shared.ensureRegistered() }
+            if phase == .active {
+                SipEngine.shared.ensureRegistered()
+                SipEngine.shared.startRegistrationHeartbeat()   // REG-HEARTBEAT 1.0.14: self-heal a lapsed registration while open
+            } else if phase == .background {
+                SipEngine.shared.stopRegistrationHeartbeat()
+            }
         }
     }
 }
