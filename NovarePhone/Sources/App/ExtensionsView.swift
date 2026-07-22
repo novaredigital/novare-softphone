@@ -16,21 +16,48 @@ struct ExtensionsView: View {
     @State private var loadError: String?
     @State private var editing = false
     @State private var hidden: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "hiddenExtensions") ?? [])
-    @State private var order: [String] = UserDefaults.standard.stringArray(forKey: "extensionOrder") ?? ExtensionsView.defaultOrder
+    // v2 key: adopting Mark's 2026-07-22 alphabetical arrangement supersedes any
+    // order saved under the old key; dragging still overrides from here on.
+    @State private var order: [String] = UserDefaults.standard.stringArray(forKey: "extensionOrder.v2") ?? ExtensionsView.defaultOrder
 
-    /// Mark's preferred default arrangement (2026-07-22): Erik first, then the
-    /// house rooms, then the city lines, then whatever's left (which appends
-    /// automatically in server order). Only applies until the user reorders.
+    /// Mark's arrangement (2026-07-22): Erik first, then the house rooms
+    /// A→Z by name, then the city lines A→Z (DC = Washington DC, under W),
+    /// then whatever's left (appends automatically in server order).
     static let defaultOrder: [String] = [
-        "510",                                              // Erik
-        // house
-        "211", "212", "552", "210", "216", "204", "215",    // den, garages, bedrooms, master bath, solarium
-        "205", "227", "206", "213", "202", "214", "207",    // kitchens, workshop, exercise, mark home/office/closets
-        "208", "201", "203", "209", "218",
-        // city lines
-        "607", "601", "220", "606", "603", "610", "226",    // London, Madrid, ATL, Nashville, Chicago x2, DC
-        "615", "605", "613", "612", "602", "611", "225",    // Knoxville, Vegas x2, LA, NY x2, Raleigh
-        "221", "616", "614", "608", "600", "604"            // San Fran, San Jose, Seattle, St Joseph, Warsaw, Toll Free
+        "510",                                  // Erik
+        // house — alphabetical by name
+        "211",                                  // Den
+        "205",                                  // Down Kitchen
+        "216",                                  // Eriks Bedroom
+        "213",                                  // Exercise Room
+        "212", "552",                           // Garage
+        "201", "203", "209", "218",             // Home 201/203/209/218
+        "227",                                  // Kitchen
+        "210",                                  // Mark Bedroom
+        "207", "208",                           // Mark Closet
+        "202",                                  // Mark Home
+        "204",                                  // Master Bathroom
+        "214",                                  // Office Home
+        "215",                                  // Solarium
+        "206",                                  // Workshop
+        // cities — alphabetical
+        "220",                                  // Atlanta (ATL)
+        "603", "610",                           // Chicago
+        "615",                                  // Knoxville
+        "605", "613",                           // Las Vegas
+        "607",                                  // London
+        "612",                                  // Los Angeles
+        "601",                                  // Madrid
+        "606",                                  // Nashville
+        "602", "611",                           // New York
+        "225",                                  // Raleigh
+        "221",                                  // San Fran
+        "616",                                  // San Jose
+        "614",                                  // Seattle
+        "608",                                  // St Joseph
+        "604",                                  // Toll Free
+        "600",                                  // Warsaw
+        "226"                                   // Washington DC (DC)
     ]
 
     struct ExtEntry: Codable, Identifiable {
@@ -76,7 +103,7 @@ struct ExtensionsView: View {
         active.move(fromOffsets: source, toOffset: destination)
         // Persist: new active order first, hidden ones keep their relative order after.
         order = active.map(\.extension_) + ordered.filter { hidden.contains($0.extension_) }.map(\.extension_)
-        UserDefaults.standard.set(order, forKey: "extensionOrder")
+        UserDefaults.standard.set(order, forKey: "extensionOrder.v2")
     }
 
     var body: some View {
