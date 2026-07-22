@@ -8,6 +8,10 @@ struct ExtensionsView: View {
     @State private var extensions: [ExtEntry] = []
     @State private var search = ""
     @State private var loadError: String?
+    // HIDE-EXTENSIONS 1.1: extensions the user chose to hide from this tab.
+    // Persisted on-device so it sticks, and fully reversible (Edit -> unhide).
+    @State private var editing = false
+    @State private var hidden: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "hiddenExtensions") ?? [])
 
     struct ExtEntry: Codable, Identifiable {
         let extension_: String
@@ -16,12 +20,20 @@ struct ExtensionsView: View {
         enum CodingKeys: String, CodingKey { case extension_ = "extension", name }
     }
 
+    // Edit mode shows ALL extensions (so you can un-hide); normal mode drops the
+    // hidden ones. Search filters either way.
     private var filtered: [ExtEntry] {
-        guard !search.isEmpty else { return extensions }
+        let base = editing ? extensions : extensions.filter { !hidden.contains($0.extension_) }
+        guard !search.isEmpty else { return base }
         let q = search.lowercased()
-        return extensions.filter {
+        return base.filter {
             $0.extension_.contains(q) || ($0.name ?? "").lowercased().contains(q)
         }
+    }
+
+    private func toggleHidden(_ ext: String) {
+        if hidden.contains(ext) { hidden.remove(ext) } else { hidden.insert(ext) }
+        UserDefaults.standard.set(Array(hidden), forKey: "hiddenExtensions")
     }
 
     var body: some View {
@@ -37,17 +49,28 @@ struct ExtensionsView: View {
                 } else {
                     List(filtered) { e in
                         Button {
-                            CallManager.shared.startOutgoingCall(to: e.extension_)
+                            if editing { toggleHidden(e.extension_) }
+                            else { CallManager.shared.startOutgoingCall(to: e.extension_) }
                         } label: {
                             HStack {
+                                if editing {
+                                    Image(systemName: hidden.contains(e.extension_) ? "eye.slash" : "eye")
+                                        .foregroundStyle(hidden.contains(e.extension_) ? Color.secondary : Color.accentColor)
+                                        .frame(width: 24)
+                                }
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(e.name?.isEmpty == false ? e.name! : "Extension \(e.extension_)")
-                                        .foregroundStyle(.primary)
+                                        .foregroundStyle(editing && hidden.contains(e.extension_) ? .secondary : .primary)
                                     Text("ext \(e.extension_)")
                                         .font(.caption).foregroundStyle(.secondary)
                                 }
                                 Spacer()
-                                Image(systemName: "phone.fill").foregroundStyle(.green)
+                                if editing {
+                                    Text(hidden.contains(e.extension_) ? "Hidden" : "Shown")
+                                        .font(.caption).foregroundStyle(.secondary)
+                                } else {
+                                    Image(systemName: "phone.fill").foregroundStyle(.green)
+                                }
                             }
                         }
                     }
@@ -56,6 +79,13 @@ struct ExtensionsView: View {
                 }
             }
             .navigationTitle("Extensions")
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !extensions.isEmpty {
+                        Button(editing ? "Done" : "Edit") { editing.toggle() }
+                    }
+                }
+            }
         }
         .task { await load() }
     }
