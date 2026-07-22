@@ -515,7 +515,26 @@ final class SipEngine {
     /// the matching device") and the call is dead silent until unlock.
     func prepareAudioSession() {
         core?.configureAudioSession()
+        enableHandsFreeRouting()
         log("prepareAudioSession()")
+    }
+
+    /// CAR HANDS-FREE 1.0.14 — allow call audio to route to Bluetooth / CarPlay.
+    /// liblinphone's configureAudioSession() sets a playAndRecord/voiceChat
+    /// category but does NOT include the Bluetooth HFP option, so with a car
+    /// speakerphone connected iOS had no allowed Bluetooth route and kept the
+    /// call on the phone's own earpiece/speaker — the driver has to hold the
+    /// phone, a real hands-free safety problem. We re-assert the same category
+    /// WITH .allowBluetooth (HFP = the car's mic+speaker) at every audio-session
+    /// setup point. liblinphone's activateAudioSession only calls setActive(),
+    /// so this category sticks and the system auto-routes to the car. The
+    /// in-call Speaker button still works (it sets overrideOutputAudioPort).
+    private func enableHandsFreeRouting() {
+        let s = AVAudioSession.sharedInstance()
+        do {
+            try s.setCategory(.playAndRecord, mode: .voiceChat,
+                              options: [.allowBluetooth, .allowBluetoothA2DP])
+        } catch { log("enableHandsFreeRouting failed: \(error)") }
     }
 
     /// The user answered the CallKit ring but the SIP call isn't here yet —
@@ -560,6 +579,9 @@ final class SipEngine {
     func audioSessionActivated(_ active: Bool) {
         // CallKit owns the AVAudioSession; hand activation to liblinphone.
         audioSessionIsActive = active
+        // Allow the car (Bluetooth HFP / CarPlay) BEFORE liblinphone starts
+        // audio on this session, so the first packets already route hands-free.
+        if active { enableHandsFreeRouting() }
         core?.activateAudioSession(activated: active)
         log("audioSession(\(active))")
     }
@@ -575,6 +597,7 @@ final class SipEngine {
                   !self.audioSessionIsActive else { return }
             self.log("[AudioWatchdog] CallKit never activated the audio session — force-activating")
             core.configureAudioSession()
+            self.enableHandsFreeRouting()
             try? AVAudioSession.sharedInstance().setActive(true)
             self.audioSessionIsActive = true
             core.activateAudioSession(activated: true)
