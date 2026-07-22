@@ -39,6 +39,10 @@ final class CallHistory: ObservableObject {
         if let data = try? JSONEncoder().encode(records) {
             try? data.write(to: fileURL)
         }
+        // MISSED-CALL BADGE 1.1: notify + badge on a missed incoming call.
+        if missed && direction == .incoming {
+            NotificationManager.shared.missedCall(from: number)
+        }
     }
 
     func clear() {

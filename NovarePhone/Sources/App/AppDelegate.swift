@@ -10,7 +10,14 @@ final class AppDelegate: NSObject, UIApplicationDelegate, PKPushRegistryDelegate
     func application(_ application: UIApplication,
                      didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]? = nil) -> Bool {
         registerForVoIPPushes()
+        NotificationManager.shared.requestAuthorization()   // missed-call / voicemail badges (1.1)
         return true
+    }
+
+    // MISSED-CALL BADGE 1.1: opening the app = the user has seen their missed
+    // calls, so clear that part of the badge.
+    func applicationDidBecomeActive(_ application: UIApplication) {
+        NotificationManager.shared.clearMissed()
     }
 
     private func registerForVoIPPushes() {
