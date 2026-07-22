@@ -30,6 +30,11 @@ import UIKit
 final class LocationReporter: NSObject, ObservableObject {
     static let shared = LocationReporter()
 
+    /// Non-nil = the one-time notice should be on screen (MainTabView alert).
+    /// Shown ONLY when the server says consent is merely PRESUMED
+    /// (explicit:false) — Nóvare-owned phones have recorded owner consent and
+    /// never see it; future/customer phones do (Mark 2026-07-22).
+    @Published var noticeText: String?
     /// Settings toggle state — some line's server has GPS on and the user
     /// hasn't opted out.
     @Published private(set) var sharingOn = false
@@ -42,6 +47,7 @@ final class LocationReporter: NSObject, ObservableObject {
     private var lastSend: [String: Date] = [:]  // client-side 1/min politeness per line
     private var monitoring = false
 
+    private let noticeShownKey = "com.novaredigital.novarephone.location.noticeShown"
     private let optedOutKey = "com.novaredigital.novarephone.location.optedOut"
 
     private override init() {
@@ -54,13 +60,17 @@ final class LocationReporter: NSObject, ObservableObject {
         manager.distanceFilter = 500
     }
 
-    private struct ConsentReply: Codable { let enabled: Bool; let consented: Bool; let notice: String }
+    private struct ConsentReply: Codable {
+        let enabled: Bool; let consented: Bool; let notice: String
+        let explicit: Bool?   // absent on pre-v2 servers → treat as recorded (no alert)
+    }
 
     /// Re-learn consent from every line's server. Runs on foreground and after
     /// a line's /user login lands (so it also covers launch and QR sign-in).
     func refresh() async {
         let session = SessionStore.shared
         var anyOffered = false
+        var needsNotice: String?   // notice text when some line's consent is only presumed
         var newEligible: Set<String> = []
         for p in session.accounts {
             guard let tok = session.userToken(for: p) else { continue }
@@ -70,22 +80,62 @@ final class LocationReporter: NSObject, ObservableObject {
                   (resp as? HTTPURLResponse)?.statusCode == 200,
                   let r = try? JSONDecoder().decode(ConsentReply.self, from: data) else { continue }
             anyOffered = true
-            if r.enabled && r.consented { newEligible.insert(p.key) }
+            if r.enabled && r.consented {
+                newEligible.insert(p.key)
+                if !(r.explicit ?? true) && needsNotice == nil { needsNotice = r.notice }
+            }
         }
         offered = anyOffered
         eligible = newEligible
         stopped.removeAll()   // a 403 stop holds only until the server says otherwise
         sharingOn = !eligible.isEmpty && !UserDefaults.standard.bool(forKey: optedOutKey)
-        // No in-app alert (Mark 2026-07-22, consent already approved/on file):
-        // the iOS When-In-Use prompt — whose purpose text mirrors the server's
-        // notice — is what the user sees, exactly once, when the feature is
-        // live for one of their lines.
-        if sharingOn { requestPermissionIfNeeded() }
+        // Notice policy (Mark 2026-07-22): phones with RECORDED consent
+        // (owner-seeded or previously accepted) go straight to the iOS
+        // When-In-Use prompt — no extra alert. Only presumed-consent lines
+        // (future/customer phones) get the one-time [OK]/[Opt Out] alert,
+        // and [OK] records their consent so it never shows again.
+        if let text = needsNotice,
+           !UserDefaults.standard.bool(forKey: noticeShownKey),
+           !UserDefaults.standard.bool(forKey: optedOutKey) {
+            noticeText = text
+            AppLog.shared.write("[GPS] showing one-time location notice (consent not yet recorded)")
+        } else if sharingOn {
+            requestPermissionIfNeeded()
+        }
+        #if targetEnvironment(simulator)
+        // e2e rig ONLY (compiled out of device builds): no touch automation
+        // in the simulator, so tests accept the notice by env var.
+        if noticeText != nil, ProcessInfo.processInfo.environment["NOVARE_SIM_GPS_ACCEPT"] == "1" {
+            acceptNotice()
+        }
+        #endif
         syncMonitoring()
+    }
+
+    /// [OK] on the notice — record consent server-side (it becomes explicit,
+    /// so the alert never returns), then ask iOS for When-In-Use.
+    func acceptNotice() {
+        UserDefaults.standard.set(true, forKey: noticeShownKey)
+        UserDefaults.standard.set(false, forKey: optedOutKey)
+        noticeText = nil
+        AppLog.shared.write("[GPS] notice accepted")
+        requestPermissionIfNeeded()
+        Task { await postConsent(granted: true) }
+    }
+
+    /// [Opt Out] on the notice — server wipes any stored history and the
+    /// notice never shows again.
+    func declineNotice() {
+        UserDefaults.standard.set(true, forKey: noticeShownKey)
+        UserDefaults.standard.set(true, forKey: optedOutKey)
+        noticeText = nil
+        AppLog.shared.write("[GPS] notice declined — opted out")
+        Task { await postConsent(granted: false) }
     }
 
     /// Settings toggle ("Share location with Nóvare support").
     func setSharing(_ on: Bool) async {
+        UserDefaults.standard.set(true, forKey: noticeShownKey)   // the toggle IS the informed choice
         UserDefaults.standard.set(!on, forKey: optedOutKey)
         AppLog.shared.write("[GPS] settings toggle → \(on ? "on" : "off")")
         if on { requestPermissionIfNeeded() }
