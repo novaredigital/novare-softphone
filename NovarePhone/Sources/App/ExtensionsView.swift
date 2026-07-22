@@ -135,41 +135,58 @@ struct ExtensionsView: View {
                         Button("Try Again") { Task { await load() } }
                     }
                 } else {
-                    List {
-                        Section {
-                            ForEach(activeList) { e in
-                                row(e, dimmed: false)
-                            }
-                            .onMove(perform: moveRows)
+                    VStack(spacing: 8) {
+                        // Edit sits BELOW the logo/nav wheel (Mark 2026-07-22),
+                        // right-aligned above the search box.
+                        HStack {
+                            Spacer()
+                            Button(editing ? "Done" : "Edit") { editing.toggle() }
                         }
-                        if !hiddenList.isEmpty {
+                        .padding(.horizontal).padding(.top, 4)
+
+                        // Search — below the logo, above the list.
+                        HStack(spacing: 6) {
+                            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                            TextField("Name or extension", text: $search)
+                                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                            if !search.isEmpty {
+                                Button { search = "" } label: {
+                                    Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                                }
+                            }
+                        }
+                        .padding(8)
+                        .background(Color(.secondarySystemBackground))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                        .padding(.horizontal)
+
+                        List {
                             Section {
-                                ForEach(hiddenList) { e in
-                                    row(e, dimmed: true)
+                                ForEach(activeList) { e in
+                                    row(e, dimmed: false)
                                 }
-                            } header: {
-                                // The divider between active and hidden.
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Divider()
-                                    Text("Hidden").font(.caption).foregroundStyle(.secondary)
+                                .onMove(perform: moveRows)
+                            }
+                            if !hiddenList.isEmpty {
+                                Section {
+                                    ForEach(hiddenList) { e in
+                                        row(e, dimmed: true)
+                                    }
+                                } header: {
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Divider()
+                                        Text("Hidden").font(.caption).foregroundStyle(.secondary)
+                                    }
                                 }
                             }
                         }
+                        .environment(\.editMode, .constant(editing ? .active : .inactive))
+                        .refreshable { await load() }
                     }
-                    .environment(\.editMode, .constant(editing ? .active : .inactive))
-                    .searchable(text: $search, prompt: "Name or extension")
-                    .refreshable { await load() }
                 }
             }
             .navigationTitle("Extensions")
             .novareChrome()
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    if !extensions.isEmpty {
-                        Button(editing ? "Done" : "Edit") { editing.toggle() }
-                    }
-                }
-            }
             .alert("Rename \(renaming.map { "ext \($0.extension_)" } ?? "")",
                    isPresented: Binding(get: { renaming != nil },
                                         set: { if !$0 { renaming = nil } })) {
