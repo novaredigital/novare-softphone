@@ -12,6 +12,9 @@ struct ExtensionsView: View {
     // Persisted on-device so it sticks, and fully reversible (Edit -> unhide).
     @State private var editing = false
     @State private var hidden: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "hiddenExtensions") ?? [])
+    // REORDER-EXTENSIONS 1.1: the user's custom ordering. Extensions not in the
+    // saved order (new on the server) append at the end in server order.
+    @State private var order: [String] = UserDefaults.standard.stringArray(forKey: "extensionOrder") ?? []
 
     struct ExtEntry: Codable, Identifiable {
         let extension_: String
@@ -20,10 +23,24 @@ struct ExtensionsView: View {
         enum CodingKeys: String, CodingKey { case extension_ = "extension", name }
     }
 
+    // The user's order first, then any new server extensions in server order.
+    private var ordered: [ExtEntry] {
+        let idx = Dictionary(uniqueKeysWithValues: order.enumerated().map { ($1, $0) })
+        return extensions.enumerated().sorted { a, b in
+            let ia = idx[a.element.extension_], ib = idx[b.element.extension_]
+            switch (ia, ib) {
+            case let (x?, y?): return x < y          // both custom-ordered
+            case (_?, nil):    return true           // ordered before unordered
+            case (nil, _?):    return false
+            default:           return a.offset < b.offset  // both new: server order
+            }
+        }.map(\.element)
+    }
+
     // Edit mode shows ALL extensions (so you can un-hide); normal mode drops the
     // hidden ones. Search filters either way.
     private var filtered: [ExtEntry] {
-        let base = editing ? extensions : extensions.filter { !hidden.contains($0.extension_) }
+        let base = editing ? ordered : ordered.filter { !hidden.contains($0.extension_) }
         guard !search.isEmpty else { return base }
         let q = search.lowercased()
         return base.filter {
@@ -34,6 +51,16 @@ struct ExtensionsView: View {
     private func toggleHidden(_ ext: String) {
         if hidden.contains(ext) { hidden.remove(ext) } else { hidden.insert(ext) }
         UserDefaults.standard.set(Array(hidden), forKey: "hiddenExtensions")
+    }
+
+    // REORDER-EXTENSIONS 1.1: drag rows in Edit mode; the full resulting order
+    // is saved so it sticks and can be rearranged again any time.
+    private func moveRows(from source: IndexSet, to destination: Int) {
+        guard search.isEmpty else { return }   // indices only line up unfiltered
+        var current = ordered
+        current.move(fromOffsets: source, toOffset: destination)
+        order = current.map(\.extension_)
+        UserDefaults.standard.set(order, forKey: "extensionOrder")
     }
 
     var body: some View {
@@ -47,7 +74,8 @@ struct ExtensionsView: View {
                         Button("Try Again") { Task { await load() } }
                     }
                 } else {
-                    List(filtered) { e in
+                    List {
+                        ForEach(filtered) { e in
                         Button {
                             if editing { toggleHidden(e.extension_) }
                             else { CallManager.shared.startOutgoingCall(to: e.extension_) }
@@ -73,7 +101,11 @@ struct ExtensionsView: View {
                                 }
                             }
                         }
+                        }
+                        .onMove(perform: moveRows)   // REORDER 1.1: drag rows in Edit mode
                     }
+                    // Active edit mode shows the drag handles; taps still toggle hide.
+                    .environment(\.editMode, .constant(editing ? .active : .inactive))
                     .searchable(text: $search, prompt: "Name or extension")
                     .refreshable { await load() }
                 }
