@@ -14,6 +14,7 @@ final class NotificationManager {
 
     private var missedCount = 0
     private var vmUnread = 0
+    private var smsUnread = 0
 
     /// Ask once (at launch). Local notifications need the user's OK; a decline
     /// just means no banners/badge — calls still work.
@@ -41,6 +42,12 @@ final class NotificationManager {
         updateBadge()
     }
 
+    /// MESSAGES 1.1: unread inbound texts contribute to the badge too.
+    func setSmsUnread(_ count: Int) {
+        smsUnread = max(0, count)
+        updateBadge()
+    }
+
     /// Clear the missed-call portion when the user has seen Recents / opened the app.
     func clearMissed() {
         missedCount = 0
@@ -48,6 +55,6 @@ final class NotificationManager {
     }
 
     private func updateBadge() {
-        UNUserNotificationCenter.current().setBadgeCount(missedCount + vmUnread)
+        UNUserNotificationCenter.current().setBadgeCount(missedCount + vmUnread + smsUnread)
     }
 }

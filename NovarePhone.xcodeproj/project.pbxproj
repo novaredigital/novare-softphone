@@ -15,6 +15,7 @@
 		73F535BE5C55DD6990C9EF7A /* CallHistory.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9FF830A1A03DD302508BFFF9 /* CallHistory.swift */; };
 		7EB341DA4C0BB8963AD6CA2B /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5FE6B64BE1B6B684714147BC /* AppDelegate.swift */; };
 		9A42BDA143189500E51536FF /* CallManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 42D61289447EC7B31B41547D /* CallManager.swift */; };
+		9BB8267B245B6F1A5803E27E /* MessagesView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D1B961BBC9364DAA3561B0A8 /* MessagesView.swift */; };
 		B1544CD1D8ABAEFDE8A8E730 /* AppLog.swift in Sources */ = {isa = PBXBuildFile; fileRef = 40A94BFB24EB9AD6CC8315D7 /* AppLog.swift */; };
 		B1931DA909921B8CCE457E8E /* SipEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = FE0BE095408718A35EFAF55A /* SipEngine.swift */; };
 		B5DEF26F51C2A3D077B3C96A /* ExtensionsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 45752F64832C63E88E51A5B3 /* ExtensionsView.swift */; };
@@ -35,6 +36,7 @@
 		9FF830A1A03DD302508BFFF9 /* CallHistory.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallHistory.swift; sourceTree = "<group>"; };
 		AB44FA0FDC0839B7E6FB4283 /* NovarePhone.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = NovarePhone.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		AED1EE6011B9A0662C26A046 /* SessionStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionStore.swift; sourceTree = "<group>"; };
+		D1B961BBC9364DAA3561B0A8 /* MessagesView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MessagesView.swift; sourceTree = "<group>"; };
 		FE0BE095408718A35EFAF55A /* SipEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SipEngine.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -76,6 +78,7 @@
 				42D61289447EC7B31B41547D /* CallManager.swift */,
 				26F567AA5C1C5F7D2C2D87A4 /* ContactsAndFavorites.swift */,
 				45752F64832C63E88E51A5B3 /* ExtensionsView.swift */,
+				D1B961BBC9364DAA3561B0A8 /* MessagesView.swift */,
 				8861DA196BDE9C7B04C0A5AB /* NotificationManager.swift */,
 				29ED53C5B0365249F436ACC7 /* NovarePhoneApp.swift */,
 				AED1EE6011B9A0662C26A046 /* SessionStore.swift */,
@@ -183,6 +186,7 @@
 				9A42BDA143189500E51536FF /* CallManager.swift in Sources */,
 				17517ED26A32BD920CA5E3FD /* ContactsAndFavorites.swift in Sources */,
 				B5DEF26F51C2A3D077B3C96A /* ExtensionsView.swift in Sources */,
+				9BB8267B245B6F1A5803E27E /* MessagesView.swift in Sources */,
 				24FD68EA6B196B06BF3FA773 /* NotificationManager.swift in Sources */,
 				4505D0B7FE3A7D9185E70701 /* NovarePhoneApp.swift in Sources */,
 				C856907C78333D2CAC0F01FB /* SessionStore.swift in Sources */,
@@ -251,7 +255,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 23;
 				DEBUG_INFORMATION_FORMAT = dwarf;
 				DEVELOPMENT_TEAM = 8S8JBLPQ9Z;
 				ENABLE_STRICT_OBJC_MSGSEND = YES;
@@ -340,7 +344,7 @@
 				CLANG_WARN_UNREACHABLE_CODE = YES;
 				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
 				COPY_PHASE_STRIP = NO;
-				CURRENT_PROJECT_VERSION = 22;
+				CURRENT_PROJECT_VERSION = 23;
 				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
 				DEVELOPMENT_TEAM = 8S8JBLPQ9Z;
 				ENABLE_NS_ASSERTIONS = NO;

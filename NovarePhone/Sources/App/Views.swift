@@ -263,6 +263,7 @@ struct DialerView: View {
     @State private var number = ""
     @State private var showSettings = false
     @State private var showVoicemail = false
+    @State private var showMessages = false
     @State private var dnd = SipEngine.shared.dndEnabled
     @StateObject private var history = CallHistory.shared
     private let keys = ["1","2","3","4","5","6","7","8","9","*","0","#"]
@@ -279,6 +280,10 @@ struct DialerView: View {
                     Text("Do Not Disturb").font(.caption).foregroundStyle(.red)
                 }
                 Spacer()
+                // MESSAGES 1.1: business texting from the Nováre main number.
+                Button { showMessages = true } label: {
+                    Image(systemName: "message.fill").font(.title3)
+                }
                 // Voicemail moved here from the tab bar (Ext took its slot —
                 // iOS caps the bottom bar at 5). Same full voicemail screen.
                 Button { showVoicemail = true } label: {
@@ -361,6 +366,9 @@ struct DialerView: View {
         .padding()
         .sheet(isPresented: $showSettings) {
             SettingsView().environmentObject(session)
+        }
+        .sheet(isPresented: $showMessages) {
+            MessagesView().environmentObject(session)
         }
         .sheet(isPresented: $showVoicemail) {
             VoicemailView().environmentObject(session)
