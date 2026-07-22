@@ -162,6 +162,7 @@ struct ExtensionsView: View {
                 }
             }
             .navigationTitle("Extensions")
+            .novareChrome()
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     if !extensions.isEmpty {

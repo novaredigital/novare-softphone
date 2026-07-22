@@ -211,6 +211,47 @@ struct InCallView: View {
     }
 }
 
+/// NOVARE CHROME 1.1 (Mark, 2026-07-22) — every page carries the Nováre
+/// Telecom logo in the top bar plus the Messages / Voicemail / Settings
+/// buttons, so they're one tap away from anywhere (previously Keypad-only).
+private struct NovareChrome: ViewModifier {
+    @State private var showMessages = false
+    @State private var showVoicemail = false
+    @State private var showSettings = false
+
+    func body(content: Content) -> some View {
+        content
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .principal) {
+                    Image("NovareTelecomLogo")
+                        .resizable().scaledToFit()
+                        .frame(height: 26)
+                        .accessibilityLabel("Nováre Telecom")
+                }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { showMessages = true } label: { Image(systemName: "message.fill") }
+                    Button { showVoicemail = true } label: { Image(systemName: "recordingtape") }
+                    Button { showSettings = true } label: { Image(systemName: "gearshape.fill") }
+                }
+            }
+            .sheet(isPresented: $showMessages) {
+                MessagesView().environmentObject(SessionStore.shared)
+            }
+            .sheet(isPresented: $showVoicemail) {
+                VoicemailView().environmentObject(SessionStore.shared)
+            }
+            .sheet(isPresented: $showSettings) {
+                SettingsView().environmentObject(SessionStore.shared)
+            }
+    }
+}
+
+extension View {
+    /// Logo + Messages/Voicemail/Settings in the nav bar (all main pages).
+    func novareChrome() -> some View { modifier(NovareChrome()) }
+}
+
 /// CAR HANDS-FREE 1.0.16 — in-call audio-route button styled to match the other
 /// call controls. Wraps AVRoutePickerView, which opens the system output picker
 /// listing every available route (car via Bluetooth/CarPlay, headset, speaker,
@@ -418,6 +459,7 @@ struct RecentsView: View {
                 }
             }
             .navigationTitle("Recents")
+            .novareChrome()
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) {
                     Button(showNumbers ? "Names" : "Numbers") { showNumbers.toggle() }

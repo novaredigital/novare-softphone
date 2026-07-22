@@ -223,6 +223,7 @@ struct FavoritesView: View {
                 .onMove { favs.move(from: $0, to: $1) }
             }
             .navigationTitle("Favorites")
+            .novareChrome()
             .toolbar { if !favs.favorites.isEmpty { EditButton() } }
             .task {
                 await contacts.load()
@@ -340,6 +341,7 @@ struct ContactsView: View {
                 }
             }
             .navigationTitle("Contacts")
+            .novareChrome()
             .searchable(text: $search, prompt: "Search name or number")
             .toolbar {
                 Button {
