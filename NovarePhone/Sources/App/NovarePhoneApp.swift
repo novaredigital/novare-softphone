@@ -32,8 +32,10 @@ struct NovarePhoneApp: App {
                 SipEngine.shared.ensureRegistered()
                 SipEngine.shared.startRegistrationHeartbeat()   // REG-HEARTBEAT 1.0.14: self-heal a lapsed registration while open
                 Task { await NotificationManager.shared.refreshServerCounts() }   // BADGES 1.1: light up VM/Messages counts
+                Task { await LocationReporter.shared.appActive() }   // GPS 1.1: consent check + foreground report
             } else if phase == .background {
                 SipEngine.shared.stopRegistrationHeartbeat()
+                LocationReporter.shared.appBackground()   // GPS 1.1: v1 never reports in background
             }
         }
     }

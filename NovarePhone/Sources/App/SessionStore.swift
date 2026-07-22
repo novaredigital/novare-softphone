@@ -68,6 +68,17 @@ final class SessionStore: ObservableObject {
     private init() {
         accounts = Self.loadFromKeychain(key: keychainKey)
         activeIndex = min(UserDefaults.standard.integer(forKey: activeKey), max(accounts.count - 1, 0))
+        #if targetEnvironment(simulator)
+        // Screenshot rig ONLY: simulators have no camera for the QR scanner,
+        // so accept a provisioning payload from the environment. This block
+        // does not exist in device builds (targetEnvironment(simulator)) —
+        // the QR-only rule for shipping builds is untouched.
+        if accounts.isEmpty,
+           let env = ProcessInfo.processInfo.environment["NOVARE_SIM_PROVISION"],
+           let data = env.data(using: .utf8) {
+            Task { await self.signIn(qrPayload: data) }
+        }
+        #endif
         if !accounts.isEmpty {
             SipEngine.shared.configure(accounts: accounts, activeIndex: activeIndex)
             Task {
@@ -202,6 +213,9 @@ final class SessionStore: ObservableObject {
             // no /user bearer and skipped this line. Now that the bearer exists,
             // register the push token for this line immediately.
             if let t = lastPushToken { await registerPushToken(t) }
+            // GPS 1.1: the location consent check needs this same bearer —
+            // re-run it now that the line can actually ask its server.
+            LocationReporter.shared.tokensUpdated()
         } catch {
             // Voicemail tab will show the *97 fallback if this line has no token.
         }

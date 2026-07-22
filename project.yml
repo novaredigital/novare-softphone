@@ -15,7 +15,7 @@ packages:
 settings:
   base:
     MARKETING_VERSION: "1.1"
-    CURRENT_PROJECT_VERSION: "34"
+    CURRENT_PROJECT_VERSION: "35"
     DEVELOPMENT_TEAM: "8S8JBLPQ9Z"
     SWIFT_VERSION: "5.0"
 
@@ -57,6 +57,10 @@ targets:
         NSMicrophoneUsageDescription: "Nováre Phone uses the microphone so you can talk on calls."
         NSCameraUsageDescription: "Nováre Phone uses the camera only to scan your sign-in code."
         NSContactsUsageDescription: "Nováre Phone shows your contacts so you can call them from your work lines. Contacts never leave your phone."
+        # GPS 1.1 — mirrors the server's consent notice: foreground-only
+        # (When-In-Use) location for support diagnostics and emergency calls,
+        # opt-out any time in Settings.
+        NSLocationWhenInUseUsageDescription: "Nováre Phone can share your phone's location with Nóvare Telecom for support and emergency-call purposes. It is only shared while the app is open, is visible only to Nóvare, and you can opt out at any time in Settings."
         # SIRI 1.1: declare INStartCallIntent so 'call X on Nováre Phone' can route
         # to the app (via NSUserActivity) and donated calls surface in Siri
         # Suggestions/Shortcuts. Full voice recognition also needs the Siri

@@ -53,6 +53,7 @@ struct SignInView: View {
 
 struct MainTabView: View {
     @StateObject private var call = CallSession.shared
+    @StateObject private var locations = LocationReporter.shared
     @State private var tab = 0
 
     var body: some View {
@@ -68,6 +69,16 @@ struct MainTabView: View {
         }
         .fullScreenCover(isPresented: Binding(get: { call.showsInAppCallUI }, set: { if !$0 { } })) {
             InCallView().environmentObject(call)
+        }
+        // GPS 1.1: the one-time location notice (text comes from the server —
+        // the app never hardcodes policy wording).
+        .alert("Location", isPresented: Binding(
+            get: { locations.noticeText != nil },
+            set: { if !$0 { locations.noticeText = nil } })) {
+            Button("OK") { locations.acceptNotice() }
+            Button("Opt Out") { locations.declineNotice() }
+        } message: {
+            Text(locations.noticeText ?? "")
         }
         #if targetEnvironment(simulator)
         // Screenshot rig ONLY (compiled out of device builds): launch straight
@@ -657,6 +668,7 @@ struct VoicemailView: View {
 
 struct SettingsView: View {
     @EnvironmentObject var session: SessionStore
+    @StateObject private var locations = LocationReporter.shared
     @State private var showScanner = false
     @State private var signOutIndex: Int?
     @State private var renameIndex: Int?
@@ -728,6 +740,17 @@ struct SettingsView: View {
                 Section {
                     Text("Tap a line to make it the outbound line. Swipe left to rename or sign out. Use Edit (top right) to drag lines into your preferred order. Incoming calls ring on every line. Transport is Auto by default — if a network blocks calling traffic, the app finds a path that works (TCP or encrypted TLS) by itself; pick one manually only if support asks you to.")
                         .font(.caption).foregroundStyle(.secondary)
+                }
+                // GPS 1.1: only shown when a line's server actually offers the
+                // feature — a PBX without the module keeps this row invisible.
+                if locations.offered {
+                    Section {
+                        Toggle("Share location with Nóvare support", isOn: Binding(
+                            get: { locations.sharingOn },
+                            set: { on in Task { await locations.setSharing(on) } }))
+                        Text("Helps support answer \"is this phone off or just out of range?\" and aids emergency calls. Your location is visible only to Nóvare, kept briefly, and never shared while the app is closed. Turning this off also deletes any stored location history. The iPhone Location permission (Settings → Privacy) must also be on.")
+                            .font(.caption).foregroundStyle(.secondary)
+                    } header: { Text("Privacy") }
                 }
                 Section {
                     ShareLink(items: AppLog.shared.shareFiles) {
