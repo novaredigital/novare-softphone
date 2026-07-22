@@ -1,5 +1,6 @@
 import UIKit
 import PushKit
+import Intents
 
 /// Owns the PushKit VoIP registry. iOS 13+ hard rule: every VoIP push MUST
 /// immediately report an incoming call to CallKit or Apple kills the app —
@@ -18,6 +19,21 @@ final class AppDelegate: NSObject, UIApplicationDelegate, PKPushRegistryDelegate
     // calls, so clear that part of the badge.
     func applicationDidBecomeActive(_ application: UIApplication) {
         NotificationManager.shared.clearMissed()
+    }
+
+    // SIRI 1.1: "call X on Nováre Phone" arrives as an INStartCallIntent inside
+    // an NSUserActivity — pull the handle and place the call.
+    func application(_ application: UIApplication,
+                     continue userActivity: NSUserActivity,
+                     restorationHandler: @escaping ([UIUserActivityRestoring]?) -> Void) -> Bool {
+        if let intent = userActivity.interaction?.intent as? INStartCallIntent,
+           let handle = intent.contacts?.first?.personHandle?.value,
+           !handle.isEmpty {
+            AppLog.shared.write("[Siri] start-call intent -> \(handle)")
+            CallManager.shared.startOutgoingCall(to: handle)
+            return true
+        }
+        return false
     }
 
     private func registerForVoIPPushes() {

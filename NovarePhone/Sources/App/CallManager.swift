@@ -2,6 +2,7 @@ import Foundation
 import CallKit
 import AVFAudio
 import UIKit
+import Intents
 
 /// CallKit integration — the native ring screen, lock-screen answer, and the
 /// system's audio session handoff. One CXProvider for the app's lifetime.
@@ -106,6 +107,22 @@ final class CallManager: NSObject, CXProviderDelegate {
         activeCallUUID = uuid
         let action = CXStartCallAction(call: uuid, handle: CXHandle(type: .phoneNumber, value: number))
         callController.request(CXTransaction(action: action)) { _ in }
+        Self.donateCallIntent(to: number)   // SIRI 1.1: teach Siri "call X on Nováre Phone"
+    }
+
+    /// SIRI 1.1 — donate an INStartCallIntent so the number/contact surfaces in
+    /// Siri Suggestions and Shortcuts and 'call X on Nováre Phone' can route back
+    /// to us. Donation needs no special entitlement; full voice recognition also
+    /// wants the Siri capability enabled on the App ID.
+    static func donateCallIntent(to number: String) {
+        let handle = INPersonHandle(value: number, type: .phoneNumber)
+        let person = INPerson(personHandle: handle, nameComponents: nil, displayName: number,
+                              image: nil, contactIdentifier: nil, customIdentifier: nil)
+        let intent = INStartCallIntent(callRecordFilter: nil, callRecordToCallBack: nil,
+                                       audioRoute: .unknown, destinationType: .normal,
+                                       contacts: [person], callCapability: .audioCall)
+        let interaction = INInteraction(intent: intent, response: nil)
+        interaction.donate(completion: nil)
     }
 
     func endActiveCall() {
