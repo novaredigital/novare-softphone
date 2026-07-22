@@ -8,25 +8,28 @@ import UIKit
 /// opting out wipes that extension's stored history immediately, and the PBX
 /// remembers the choice across devices). This class:
 ///  1. asks each signed-in line's server `GET /user/location/consent`,
-///  2. shows the server's notice text ONCE with [OK] / [Opt Out],
+///  2. when the server says enabled+consented, asks iOS for When-In-Use —
+///     the OS permission prompt IS the user-facing notice (its purpose text
+///     mirrors the server's; Mark removed the extra in-app alert 2026-07-22:
+///     owner consent is already recorded server-side and the portal shows
+///     the notice),
 ///  3. sends `POST /user/location {lat, lon, accuracy_m}` on foreground /
 ///     registration and as the phone moves — FOREGROUND ONLY in v1: the only
 ///     iOS permission requested is When-In-Use and there is no location
 ///     background mode, so nothing is ever reported while the app is closed,
-///  4. mirrors the consent state in a Settings toggle.
+///  4. mirrors the consent state in a Settings toggle (the opt-out lives
+///     there and in the client portal).
 ///
 /// Server replies: `{ok:true,throttled:true}` = accepted-but-dropped (the
 /// server keeps at most one report/min per extension — never retry);
 /// 403 = disabled or opted out → stop sending until a consent GET says
 /// otherwise. Servers WITHOUT the endpoint (404 — e.g. a PBX that hasn't
-/// shipped the module) leave the feature fully dormant: no notice, no toggle,
+/// shipped the module) leave the feature fully dormant: no prompt, no toggle,
 /// no reports.
 @MainActor
 final class LocationReporter: NSObject, ObservableObject {
     static let shared = LocationReporter()
 
-    /// Non-nil = the one-time notice should be on screen now (MainTabView alert).
-    @Published var noticeText: String?
     /// Settings toggle state — some line's server has GPS on and the user
     /// hasn't opted out.
     @Published private(set) var sharingOn = false
@@ -39,7 +42,6 @@ final class LocationReporter: NSObject, ObservableObject {
     private var lastSend: [String: Date] = [:]  // client-side 1/min politeness per line
     private var monitoring = false
 
-    private let noticeShownKey = "com.novaredigital.novarephone.location.noticeShown"
     private let optedOutKey = "com.novaredigital.novarephone.location.optedOut"
 
     private override init() {
@@ -58,9 +60,8 @@ final class LocationReporter: NSObject, ObservableObject {
     /// a line's /user login lands (so it also covers launch and QR sign-in).
     func refresh() async {
         let session = SessionStore.shared
-        var anyOffered = false, anyEnabled = false
+        var anyOffered = false
         var newEligible: Set<String> = []
-        var notice: String?
         for p in session.accounts {
             guard let tok = session.userToken(for: p) else { continue }
             var req = URLRequest(url: p.apiBase.appendingPathComponent("user/location/consent"))
@@ -69,55 +70,22 @@ final class LocationReporter: NSObject, ObservableObject {
                   (resp as? HTTPURLResponse)?.statusCode == 200,
                   let r = try? JSONDecoder().decode(ConsentReply.self, from: data) else { continue }
             anyOffered = true
-            if r.enabled { anyEnabled = true }
-            if r.enabled && r.consented { newEligible.insert(p.key); notice = notice ?? r.notice }
+            if r.enabled && r.consented { newEligible.insert(p.key) }
         }
         offered = anyOffered
         eligible = newEligible
         stopped.removeAll()   // a 403 stop holds only until the server says otherwise
         sharingOn = !eligible.isEmpty && !UserDefaults.standard.bool(forKey: optedOutKey)
-        // One-time notice: once per install, only when a server actually has
-        // the feature on, never again after an opt-out (server remembers too).
-        if anyEnabled, let text = notice,
-           !UserDefaults.standard.bool(forKey: noticeShownKey),
-           !UserDefaults.standard.bool(forKey: optedOutKey) {
-            noticeText = text
-            AppLog.shared.write("[GPS] showing one-time location notice")
-        }
-        #if targetEnvironment(simulator)
-        // Screenshot/e2e rig ONLY (compiled out of device builds): the
-        // simulator has no touch automation, so tests accept the notice by env.
-        if noticeText != nil, ProcessInfo.processInfo.environment["NOVARE_SIM_GPS_ACCEPT"] == "1" {
-            acceptNotice()
-        }
-        #endif
+        // No in-app alert (Mark 2026-07-22, consent already approved/on file):
+        // the iOS When-In-Use prompt — whose purpose text mirrors the server's
+        // notice — is what the user sees, exactly once, when the feature is
+        // live for one of their lines.
+        if sharingOn { requestPermissionIfNeeded() }
         syncMonitoring()
-    }
-
-    /// [OK] on the notice — record the explicit opt-in server-side (timestamp +
-    /// policy version), then ask iOS for When-In-Use.
-    func acceptNotice() {
-        UserDefaults.standard.set(true, forKey: noticeShownKey)
-        UserDefaults.standard.set(false, forKey: optedOutKey)
-        noticeText = nil
-        AppLog.shared.write("[GPS] notice accepted")
-        requestPermissionIfNeeded()
-        Task { await postConsent(granted: true) }
-    }
-
-    /// [Opt Out] on the notice — server deletes any stored history and the
-    /// notice never shows again.
-    func declineNotice() {
-        UserDefaults.standard.set(true, forKey: noticeShownKey)
-        UserDefaults.standard.set(true, forKey: optedOutKey)
-        noticeText = nil
-        AppLog.shared.write("[GPS] notice declined — opted out")
-        Task { await postConsent(granted: false) }
     }
 
     /// Settings toggle ("Share location with Nóvare support").
     func setSharing(_ on: Bool) async {
-        UserDefaults.standard.set(true, forKey: noticeShownKey)   // the toggle IS the informed choice
         UserDefaults.standard.set(!on, forKey: optedOutKey)
         AppLog.shared.write("[GPS] settings toggle → \(on ? "on" : "off")")
         if on { requestPermissionIfNeeded() }

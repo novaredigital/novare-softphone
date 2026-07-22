@@ -53,7 +53,6 @@ struct SignInView: View {
 
 struct MainTabView: View {
     @StateObject private var call = CallSession.shared
-    @StateObject private var locations = LocationReporter.shared
     @State private var tab = 0
 
     var body: some View {
@@ -69,16 +68,6 @@ struct MainTabView: View {
         }
         .fullScreenCover(isPresented: Binding(get: { call.showsInAppCallUI }, set: { if !$0 { } })) {
             InCallView().environmentObject(call)
-        }
-        // GPS 1.1: the one-time location notice (text comes from the server —
-        // the app never hardcodes policy wording).
-        .alert("Location", isPresented: Binding(
-            get: { locations.noticeText != nil },
-            set: { if !$0 { locations.noticeText = nil } })) {
-            Button("OK") { locations.acceptNotice() }
-            Button("Opt Out") { locations.declineNotice() }
-        } message: {
-            Text(locations.noticeText ?? "")
         }
         #if targetEnvironment(simulator)
         // Screenshot rig ONLY (compiled out of device builds): launch straight
