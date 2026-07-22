@@ -135,16 +135,9 @@ struct ExtensionsView: View {
                         Button("Try Again") { Task { await load() } }
                     }
                 } else {
-                    VStack(spacing: 8) {
-                        // Edit sits BELOW the logo/nav wheel (Mark 2026-07-22),
-                        // right-aligned above the search box.
-                        HStack {
-                            Spacer()
-                            Button(editing ? "Done" : "Edit") { editing.toggle() }
-                        }
-                        .padding(.horizontal).padding(.top, 4)
-
-                        // Search — below the logo, above the list.
+                    VStack(spacing: 6) {
+                        // Search sits right under the logo (Mark 2026-07-22 —
+                        // content pushed up; Edit is back next to the nav wheel).
                         HStack(spacing: 6) {
                             Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
                             TextField("Name or extension", text: $search)
@@ -158,7 +151,7 @@ struct ExtensionsView: View {
                         .padding(8)
                         .background(Color(.secondarySystemBackground))
                         .clipShape(RoundedRectangle(cornerRadius: 10))
-                        .padding(.horizontal)
+                        .padding(.horizontal).padding(.top, 6)
 
                         List {
                             Section {
@@ -187,6 +180,13 @@ struct ExtensionsView: View {
             }
             .navigationTitle("Extensions")
             .novareChrome()
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    if !extensions.isEmpty {
+                        Button(editing ? "Done" : "Edit") { editing.toggle() }
+                    }
+                }
+            }
             .alert("Rename \(renaming.map { "ext \($0.extension_)" } ?? "")",
                    isPresented: Binding(get: { renaming != nil },
                                         set: { if !$0 { renaming = nil } })) {
