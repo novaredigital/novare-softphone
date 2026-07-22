@@ -46,6 +46,16 @@ final class LocationReporter: NSObject, ObservableObject {
     private var stopped: Set<String> = []       // 403'd lines — cleared on next GET
     private var lastSend: [String: Date] = [:]  // client-side 1/min politeness per line
     private var monitoring = false
+    private var lastLocation: CLLocation?       // most recent fix, for the heartbeat
+    private var heartbeat: Timer?               // periodic re-report while foregrounded
+
+    /// GPS 1.1 heartbeat (Mark 2026-07-22): without this the app only reports on
+    /// a ~500 m move, so a stationary phone updates the location log exactly once
+    /// (when foregrounded) and then looks frozen. This timer re-sends the last
+    /// known fix on a fixed cadence WHILE THE APP IS OPEN — still foreground-only
+    /// (it's torn down on background), still cheap. 65 s clears the server's 60 s
+    /// throttle so each tick is accepted rather than dropped.
+    private let heartbeatInterval: TimeInterval = 65
 
     private let noticeShownKey = "com.novaredigital.novarephone.location.noticeShown"
     private let optedOutKey = "com.novaredigital.novarephone.location.optedOut"
@@ -145,7 +155,7 @@ final class LocationReporter: NSObject, ObservableObject {
     // MARK: - App lifecycle hooks
 
     func appActive() async { await refresh() }
-    func appBackground() { if monitoring { manager.stopUpdatingLocation(); monitoring = false } }
+    func appBackground() { if monitoring { manager.stopUpdatingLocation(); monitoring = false; stopHeartbeat() } }
     /// A line's /user login just landed (launch, foreground re-login, QR sign-in).
     func tokensUpdated() { Task { await refresh() } }
 
@@ -186,14 +196,38 @@ final class LocationReporter: NSObject, ObservableObject {
 
     /// One monitoring path: while the app is frontmost and sharing is on,
     /// continuous coarse updates run; the first fix after foregrounding IS the
-    /// "on foreground/registration" report, and the 500 m filter delivers the
-    /// significant-change ones. Everything stops on background.
+    /// "on foreground/registration" report, the 500 m filter delivers the
+    /// significant-change ones, and the heartbeat re-sends the last fix on a
+    /// fixed cadence so a stationary phone still updates. All stops on background.
     private func syncMonitoring() {
         let want = sharingOn && !eligible.isEmpty && permitted
             && UIApplication.shared.applicationState != .background
-        if want && !monitoring { manager.startUpdatingLocation(); monitoring = true }
-        if !want && monitoring { manager.stopUpdatingLocation(); monitoring = false }
+        if want && !monitoring {
+            manager.startUpdatingLocation()
+            monitoring = true
+            startHeartbeat()
+        }
+        if !want && monitoring {
+            manager.stopUpdatingLocation()
+            monitoring = false
+            stopHeartbeat()
+        }
     }
+
+    private func startHeartbeat() {
+        heartbeat?.invalidate()
+        let t = Timer(timeInterval: heartbeatInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, self.monitoring,
+                      let loc = self.lastLocation ?? self.manager.location else { return }
+                self.send(loc)
+            }
+        }
+        RunLoop.main.add(t, forMode: .common)
+        heartbeat = t
+    }
+
+    private func stopHeartbeat() { heartbeat?.invalidate(); heartbeat = nil }
 
     private func send(_ loc: CLLocation) {
         let session = SessionStore.shared
@@ -229,7 +263,7 @@ final class LocationReporter: NSObject, ObservableObject {
 extension LocationReporter: CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
-        DispatchQueue.main.async { self.send(loc) }
+        DispatchQueue.main.async { self.lastLocation = loc; self.send(loc) }
     }
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         // Transient fix failures are normal indoors; the next update wins.
