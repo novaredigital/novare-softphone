@@ -3,18 +3,35 @@ import SwiftUI
 /// The Ext tab — every extension on this line's server, one tap to call.
 /// Fed by GET /api/user/extensions (the /user realm the line signed into at
 /// QR time; nothing hardcoded). Pull to refresh; searchable.
+///
+/// CUSTOMIZE 1.1 (Mark):
+///  - Edit mode: tap a row to hide/show it, drag the handle to reorder.
+///  - Hidden extensions drop to the BOTTOM under a "Hidden" divider (still
+///    callable, just out of the way) — reversible any time.
+///  - Choices persist on-device (UserDefaults).
 struct ExtensionsView: View {
     @EnvironmentObject var session: SessionStore
     @State private var extensions: [ExtEntry] = []
     @State private var search = ""
     @State private var loadError: String?
-    // HIDE-EXTENSIONS 1.1: extensions the user chose to hide from this tab.
-    // Persisted on-device so it sticks, and fully reversible (Edit -> unhide).
     @State private var editing = false
     @State private var hidden: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "hiddenExtensions") ?? [])
-    // REORDER-EXTENSIONS 1.1: the user's custom ordering. Extensions not in the
-    // saved order (new on the server) append at the end in server order.
-    @State private var order: [String] = UserDefaults.standard.stringArray(forKey: "extensionOrder") ?? []
+    @State private var order: [String] = UserDefaults.standard.stringArray(forKey: "extensionOrder") ?? ExtensionsView.defaultOrder
+
+    /// Mark's preferred default arrangement (2026-07-22): Erik first, then the
+    /// house rooms, then the city lines, then whatever's left (which appends
+    /// automatically in server order). Only applies until the user reorders.
+    static let defaultOrder: [String] = [
+        "510",                                              // Erik
+        // house
+        "211", "212", "552", "210", "216", "204", "215",    // den, garages, bedrooms, master bath, solarium
+        "205", "227", "206", "213", "202", "214", "207",    // kitchens, workshop, exercise, mark home/office/closets
+        "208", "201", "203", "209", "218",
+        // city lines
+        "607", "601", "220", "606", "603", "610", "226",    // London, Madrid, ATL, Nashville, Chicago x2, DC
+        "615", "605", "613", "612", "602", "611", "225",    // Knoxville, Vegas x2, LA, NY x2, Raleigh
+        "221", "616", "614", "608", "600", "604"            // San Fran, San Jose, Seattle, St Joseph, Warsaw, Toll Free
+    ]
 
     struct ExtEntry: Codable, Identifiable {
         let extension_: String
@@ -29,37 +46,36 @@ struct ExtensionsView: View {
         return extensions.enumerated().sorted { a, b in
             let ia = idx[a.element.extension_], ib = idx[b.element.extension_]
             switch (ia, ib) {
-            case let (x?, y?): return x < y          // both custom-ordered
-            case (_?, nil):    return true           // ordered before unordered
+            case let (x?, y?): return x < y
+            case (_?, nil):    return true
             case (nil, _?):    return false
-            default:           return a.offset < b.offset  // both new: server order
+            default:           return a.offset < b.offset
             }
         }.map(\.element)
     }
 
-    // Edit mode shows ALL extensions (so you can un-hide); normal mode drops the
-    // hidden ones. Search filters either way.
-    private var filtered: [ExtEntry] {
-        let base = editing ? ordered : ordered.filter { !hidden.contains($0.extension_) }
-        guard !search.isEmpty else { return base }
+    private func matchesSearch(_ e: ExtEntry) -> Bool {
+        guard !search.isEmpty else { return true }
         let q = search.lowercased()
-        return base.filter {
-            $0.extension_.contains(q) || ($0.name ?? "").lowercased().contains(q)
-        }
+        return e.extension_.contains(q) || (e.name ?? "").lowercased().contains(q)
     }
+
+    private var activeList: [ExtEntry] { ordered.filter { !hidden.contains($0.extension_) && matchesSearch($0) } }
+    private var hiddenList: [ExtEntry] { ordered.filter { hidden.contains($0.extension_) && matchesSearch($0) } }
 
     private func toggleHidden(_ ext: String) {
         if hidden.contains(ext) { hidden.remove(ext) } else { hidden.insert(ext) }
         UserDefaults.standard.set(Array(hidden), forKey: "hiddenExtensions")
     }
 
-    // REORDER-EXTENSIONS 1.1: drag rows in Edit mode; the full resulting order
-    // is saved so it sticks and can be rearranged again any time.
+    // Drag in Edit mode reorders the ACTIVE (shown) rows; hidden rows live in
+    // their own bottom section. Disabled while searching (indices shift).
     private func moveRows(from source: IndexSet, to destination: Int) {
-        guard search.isEmpty else { return }   // indices only line up unfiltered
-        var current = ordered
-        current.move(fromOffsets: source, toOffset: destination)
-        order = current.map(\.extension_)
+        guard search.isEmpty else { return }
+        var active = ordered.filter { !hidden.contains($0.extension_) }
+        active.move(fromOffsets: source, toOffset: destination)
+        // Persist: new active order first, hidden ones keep their relative order after.
+        order = active.map(\.extension_) + ordered.filter { hidden.contains($0.extension_) }.map(\.extension_)
         UserDefaults.standard.set(order, forKey: "extensionOrder")
     }
 
@@ -75,36 +91,26 @@ struct ExtensionsView: View {
                     }
                 } else {
                     List {
-                        ForEach(filtered) { e in
-                        Button {
-                            if editing { toggleHidden(e.extension_) }
-                            else { CallManager.shared.startOutgoingCall(to: e.extension_) }
-                        } label: {
-                            HStack {
-                                if editing {
-                                    Image(systemName: hidden.contains(e.extension_) ? "eye.slash" : "eye")
-                                        .foregroundStyle(hidden.contains(e.extension_) ? Color.secondary : Color.accentColor)
-                                        .frame(width: 24)
+                        Section {
+                            ForEach(activeList) { e in
+                                row(e, dimmed: false)
+                            }
+                            .onMove(perform: moveRows)
+                        }
+                        if !hiddenList.isEmpty {
+                            Section {
+                                ForEach(hiddenList) { e in
+                                    row(e, dimmed: true)
                                 }
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(e.name?.isEmpty == false ? e.name! : "Extension \(e.extension_)")
-                                        .foregroundStyle(editing && hidden.contains(e.extension_) ? .secondary : .primary)
-                                    Text("ext \(e.extension_)")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if editing {
-                                    Text(hidden.contains(e.extension_) ? "Hidden" : "Shown")
-                                        .font(.caption).foregroundStyle(.secondary)
-                                } else {
-                                    Image(systemName: "phone.fill").foregroundStyle(.green)
+                            } header: {
+                                // The divider between active and hidden.
+                                VStack(alignment: .leading, spacing: 4) {
+                                    Divider()
+                                    Text("Hidden").font(.caption).foregroundStyle(.secondary)
                                 }
                             }
                         }
-                        }
-                        .onMove(perform: moveRows)   // REORDER 1.1: drag rows in Edit mode
                     }
-                    // Active edit mode shows the drag handles; taps still toggle hide.
                     .environment(\.editMode, .constant(editing ? .active : .inactive))
                     .searchable(text: $search, prompt: "Name or extension")
                     .refreshable { await load() }
@@ -120,6 +126,36 @@ struct ExtensionsView: View {
             }
         }
         .task { await load() }
+    }
+
+    @ViewBuilder
+    private func row(_ e: ExtEntry, dimmed: Bool) -> some View {
+        Button {
+            if editing { toggleHidden(e.extension_) }
+            else { CallManager.shared.startOutgoingCall(to: e.extension_) }
+        } label: {
+            HStack {
+                if editing {
+                    Image(systemName: dimmed ? "eye.slash" : "eye")
+                        .foregroundStyle(dimmed ? Color.secondary : Color.accentColor)
+                        .frame(width: 24)
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(e.name?.isEmpty == false ? e.name! : "Extension \(e.extension_)")
+                        .foregroundStyle(dimmed ? .secondary : .primary)
+                    Text("ext \(e.extension_)")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if editing {
+                    Text(dimmed ? "Hidden" : "Shown")
+                        .font(.caption).foregroundStyle(.secondary)
+                } else {
+                    Image(systemName: "phone.fill")
+                        .foregroundStyle(dimmed ? Color.secondary : Color.green)
+                }
+            }
+        }
     }
 
     private func load() async {
