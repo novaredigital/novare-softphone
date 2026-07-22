@@ -559,10 +559,13 @@ struct VoicemailView: View {
                     }
                     .padding(.vertical, 2)
                     .swipeActions(edge: .trailing) {
-                        // READ/UNREAD 1.1: swipe to flip a voicemail's state so
-                        // you can leave one marked unread to come back to it.
+                        Button(role: .destructive) {
+                            Task { await deleteVM(m) }
+                        } label: { Label("Delete", systemImage: "trash") }
+                        // READ/UNREAD 1.1: flip state so you can leave one to
+                        // come back to it.
                         Button {
-                            Task { await setRead(m, to: m.isUnread) }   // isUnread -> mark read; read -> mark unread
+                            Task { await setRead(m, to: m.isUnread) }
                         } label: {
                             Label(m.isUnread ? "Mark Read" : "Mark Unread",
                                   systemImage: m.isUnread ? "envelope.open" : "envelope.badge")
@@ -636,6 +639,18 @@ struct VoicemailView: View {
         if let i = messages.firstIndex(where: { $0.id == id }) {
             messages[i].read = read ? 1 : 0
         }
+        NotificationManager.shared.setVoicemailUnread(messages.filter(\.isUnread).count)
+    }
+
+    /// DELETE 1.1 — remove a voicemail on the server + locally.
+    private func deleteVM(_ m: VMessage) async {
+        guard let p = session.provisioning, let tok = session.userToken(for: p) else { return }
+        if playingId == m.id { player?.pause(); playingId = nil }
+        var req = URLRequest(url: p.apiBase.appendingPathComponent("user/voicemail/\(m.id)"))
+        req.httpMethod = "DELETE"
+        req.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization")
+        _ = try? await URLSession.shared.data(for: req)
+        messages.removeAll { $0.id == m.id }
         NotificationManager.shared.setVoicemailUnread(messages.filter(\.isUnread).count)
     }
 }

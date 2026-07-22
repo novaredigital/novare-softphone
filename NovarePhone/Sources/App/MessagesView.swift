@@ -67,6 +67,9 @@ struct MessagesView: View {
                         }
                     }
                     .swipeActions(edge: .trailing) {
+                        Button(role: .destructive) {
+                            Task { await deleteConversation(c) }
+                        } label: { Label("Delete", systemImage: "trash") }
                         Button {
                             Task { await setConversationRead(c, to: c.unreadCount > 0) }
                         } label: {
@@ -149,6 +152,21 @@ struct MessagesView: View {
             _ = try? await URLSession.shared.data(for: req)
             if let i = messages.firstIndex(where: { $0.id == m.id }) { messages[i].read = read ? 1 : 0 }
         }
+        NotificationManager.shared.setSmsUnread(messages.filter(\.isUnread).count)
+    }
+
+    /// DELETE 1.1 — remove an entire conversation (every message with that
+    /// number) on the server + locally.
+    private func deleteConversation(_ c: Conversation) async {
+        guard let p = session.provisioning, let tok = session.userToken(for: p) else { return }
+        for m in c.messages {
+            var req = URLRequest(url: p.apiBase.appendingPathComponent("user/sms/\(m.id)"))
+            req.httpMethod = "DELETE"
+            req.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization")
+            _ = try? await URLSession.shared.data(for: req)
+        }
+        let ids = Set(c.messages.map(\.id))
+        messages.removeAll { ids.contains($0.id) }
         NotificationManager.shared.setSmsUnread(messages.filter(\.isUnread).count)
     }
 }
