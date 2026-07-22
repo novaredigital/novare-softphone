@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import AVKit
 
 // MARK: - Sign-in (QR scan; the ONLY way the app learns about a server)
 
@@ -52,21 +53,36 @@ struct SignInView: View {
 
 struct MainTabView: View {
     @StateObject private var call = CallSession.shared
+    @State private var tab = 0
 
     var body: some View {
         // iOS shows at most 5 bottom tabs (a 6th buries the extras behind
         // "More"). Ext takes the 5th slot per Mark; Voicemail moved to the
         // tape button in the Keypad header — same screen, one tap away.
-        TabView {
-            FavoritesView().tabItem { Label("Favorites", systemImage: "star.fill") }
-            ExtensionsView().tabItem { Label("Ext", systemImage: "person.3.fill") }
-            RecentsView().tabItem { Label("Recents", systemImage: "clock.fill") }
-            ContactsView().tabItem { Label("Contacts", systemImage: "person.crop.circle") }
-            DialerView().tabItem { Label("Keypad", systemImage: "circle.grid.3x3.fill") }
+        TabView(selection: $tab) {
+            FavoritesView().tabItem { Label("Favorites", systemImage: "star.fill") }.tag(0)
+            ExtensionsView().tabItem { Label("Ext", systemImage: "person.3.fill") }.tag(1)
+            RecentsView().tabItem { Label("Recents", systemImage: "clock.fill") }.tag(2)
+            ContactsView().tabItem { Label("Contacts", systemImage: "person.crop.circle") }.tag(3)
+            DialerView().tabItem { Label("Keypad", systemImage: "circle.grid.3x3.fill") }.tag(4)
         }
         .fullScreenCover(isPresented: Binding(get: { call.showsInAppCallUI }, set: { if !$0 { } })) {
             InCallView().environmentObject(call)
         }
+        #if targetEnvironment(simulator)
+        // Screenshot rig ONLY (compiled out of device builds): launch straight
+        // onto a tab, optionally auto-dial once registered — the simulator has
+        // no touch automation, so App Store screenshots are driven by env vars.
+        .onAppear {
+            let env = ProcessInfo.processInfo.environment
+            if let t = env["NOVARE_SIM_TAB"], let i = Int(t), (0...4).contains(i) { tab = i }
+            if let dial = env["NOVARE_SIM_DIAL"], !dial.isEmpty {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 5) {
+                    SipEngine.shared.placeCall(to: dial)
+                }
+            }
+        }
+        #endif
     }
 }
 
@@ -126,7 +142,7 @@ struct InCallView: View {
             Spacer()
 
             VStack(spacing: 16) {
-                HStack(spacing: 34) {
+                HStack(spacing: 24) {
                     CallControlButton(icon: call.isMuted ? "mic.slash.fill" : "mic.fill",
                                       label: "Mute", active: call.isMuted) {
                         call.isMuted.toggle()
@@ -140,6 +156,11 @@ struct InCallView: View {
                         try? AVAudioSession.sharedInstance()
                             .overrideOutputAudioPort(call.isSpeaker ? .speaker : .none)
                     }
+                    // CAR HANDS-FREE 1.0.16: full audio-route picker — send call
+                    // audio to the car (Bluetooth/CarPlay), a headset, speaker, or
+                    // earpiece in one tap. The Speaker toggle only flips
+                    // speaker<->earpiece; this exposes EVERY route including the car.
+                    AudioRouteButton()
                 }
                 HStack(spacing: 34) {
                     CallControlButton(icon: "arrow.uturn.right", label: "Transfer") {
@@ -188,6 +209,34 @@ struct InCallView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))
     }
+}
+
+/// CAR HANDS-FREE 1.0.16 — in-call audio-route button styled to match the other
+/// call controls. Wraps AVRoutePickerView, which opens the system output picker
+/// listing every available route (car via Bluetooth/CarPlay, headset, speaker,
+/// receiver). Lets a driver fix a mis-routed call in one tap without leaving the
+/// app or digging through iOS Settings.
+private struct AudioRouteButton: View {
+    var body: some View {
+        VStack(spacing: 6) {
+            RoutePickerRepresentable()
+                .frame(width: 64, height: 64)
+                .background(Circle().fill(Color(.secondarySystemBackground)))
+            Text("Audio").font(.caption).foregroundStyle(.secondary)
+        }
+    }
+}
+
+private struct RoutePickerRepresentable: UIViewRepresentable {
+    func makeUIView(context: Context) -> AVRoutePickerView {
+        let v = AVRoutePickerView()
+        v.prioritizesVideoDevices = false
+        v.activeTintColor = UIColor(Color.accentColor)
+        v.tintColor = .label
+        v.backgroundColor = .clear
+        return v
+    }
+    func updateUIView(_ uiView: AVRoutePickerView, context: Context) {}
 }
 
 private struct CallControlButton: View {
