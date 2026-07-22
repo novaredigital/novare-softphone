@@ -16,6 +16,11 @@ struct ExtensionsView: View {
     @State private var loadError: String?
     @State private var editing = false
     @State private var hidden: Set<String> = Set(UserDefaults.standard.stringArray(forKey: "hiddenExtensions") ?? [])
+    // RELABEL 1.1: user's own names for extensions, on-device. Empty/cleared
+    // label reverts to the server's name.
+    @State private var labels: [String: String] = (UserDefaults.standard.dictionary(forKey: "extensionLabels") as? [String: String]) ?? [:]
+    @State private var renaming: ExtEntry?
+    @State private var renameText = ""
     // v2 key: adopting Mark's 2026-07-22 alphabetical arrangement supersedes any
     // order saved under the old key; dragging still overrides from here on.
     @State private var order: [String] = UserDefaults.standard.stringArray(forKey: "extensionOrder.v2") ?? ExtensionsView.defaultOrder
@@ -81,10 +86,23 @@ struct ExtensionsView: View {
         }.map(\.element)
     }
 
+    /// Custom label first, then the server name.
+    private func displayName(_ e: ExtEntry) -> String {
+        if let l = labels[e.extension_], !l.isEmpty { return l }
+        return e.name?.isEmpty == false ? e.name! : "Extension \(e.extension_)"
+    }
+
     private func matchesSearch(_ e: ExtEntry) -> Bool {
         guard !search.isEmpty else { return true }
         let q = search.lowercased()
         return e.extension_.contains(q) || (e.name ?? "").lowercased().contains(q)
+            || displayName(e).lowercased().contains(q)
+    }
+
+    private func saveLabel(_ ext: String, _ text: String) {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        if t.isEmpty { labels.removeValue(forKey: ext) } else { labels[ext] = t }
+        UserDefaults.standard.set(labels, forKey: "extensionLabels")
     }
 
     private var activeList: [ExtEntry] { ordered.filter { !hidden.contains($0.extension_) && matchesSearch($0) } }
@@ -151,6 +169,22 @@ struct ExtensionsView: View {
                     }
                 }
             }
+            .alert("Rename \(renaming.map { "ext \($0.extension_)" } ?? "")",
+                   isPresented: Binding(get: { renaming != nil },
+                                        set: { if !$0 { renaming = nil } })) {
+                TextField(renaming?.name ?? "Label", text: $renameText)
+                Button("Save") {
+                    if let e = renaming { saveLabel(e.extension_, renameText) }
+                    renaming = nil
+                }
+                Button("Use Server Name") {
+                    if let e = renaming { saveLabel(e.extension_, "") }
+                    renaming = nil
+                }
+                Button("Cancel", role: .cancel) { renaming = nil }
+            } message: {
+                Text("This label shows only on this phone. Use Server Name puts the original back.")
+            }
         }
         .task { await load() }
     }
@@ -168,9 +202,13 @@ struct ExtensionsView: View {
                         .frame(width: 24)
                 }
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(e.name?.isEmpty == false ? e.name! : "Extension \(e.extension_)")
+                    Text(displayName(e))
                         .foregroundStyle(dimmed ? .secondary : .primary)
-                    Text("ext \(e.extension_)")
+                    // Show the server's name under a custom label so the
+                    // original identity is never lost.
+                    Text(labels[e.extension_]?.isEmpty == false
+                         ? "ext \(e.extension_) · \(e.name ?? "")"
+                         : "ext \(e.extension_)")
                         .font(.caption).foregroundStyle(.secondary)
                 }
                 Spacer()
@@ -181,6 +219,20 @@ struct ExtensionsView: View {
                     Image(systemName: "phone.fill")
                         .foregroundStyle(dimmed ? Color.secondary : Color.green)
                 }
+            }
+        }
+        // RELABEL 1.1: long-press any extension to rename it (your label lives
+        // on this phone only; clear the field to go back to the server name).
+        .contextMenu {
+            Button {
+                renameText = labels[e.extension_] ?? ""
+                renaming = e
+            } label: { Label("Rename", systemImage: "pencil") }
+            Button {
+                toggleHidden(e.extension_)
+            } label: {
+                Label(hidden.contains(e.extension_) ? "Show" : "Hide",
+                      systemImage: hidden.contains(e.extension_) ? "eye" : "eye.slash")
             }
         }
     }
