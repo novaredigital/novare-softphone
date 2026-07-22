@@ -433,6 +433,9 @@ struct VMessage: Codable, Identifiable {
     let duration: Int?
     let ai_summary: String?
     let transcript: String?
+    var read: Int?          // 0 = unread (server-tracked); mutable so the UI can update in place
+
+    var isUnread: Bool { (read ?? 1) == 0 }
 }
 
 struct VoicemailView: View {
@@ -451,7 +454,13 @@ struct VoicemailView: View {
                 ForEach(messages) { m in
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            Text(m.caller_name ?? m.caller_id ?? "Unknown").font(.headline)
+                            // READ/UNREAD 1.1: unread voicemails show a blue dot +
+                            // bold name so you know what still needs attention.
+                            if m.isUnread {
+                                Circle().fill(Color.accentColor).frame(width: 9, height: 9)
+                            }
+                            Text(m.caller_name ?? m.caller_id ?? "Unknown")
+                                .font(.headline).fontWeight(m.isUnread ? .bold : .regular)
                             Spacer()
                             Text(String((m.created_at ?? "").prefix(16)).replacingOccurrences(of: "T", with: " "))
                                 .font(.caption).foregroundStyle(.secondary)
@@ -485,6 +494,17 @@ struct VoicemailView: View {
                         }
                     }
                     .padding(.vertical, 2)
+                    .swipeActions(edge: .trailing) {
+                        // READ/UNREAD 1.1: swipe to flip a voicemail's state so
+                        // you can leave one marked unread to come back to it.
+                        Button {
+                            Task { await setRead(m, to: m.isUnread) }   // isUnread -> mark read; read -> mark unread
+                        } label: {
+                            Label(m.isUnread ? "Mark Read" : "Mark Unread",
+                                  systemImage: m.isUnread ? "envelope.open" : "envelope.badge")
+                        }
+                        .tint(m.isUnread ? .gray : .accentColor)
+                    }
                 }
                 Section {
                     Button {
@@ -513,6 +533,7 @@ struct VoicemailView: View {
             struct Reply: Codable { let messages: [VMessage] }
             let (data, _) = try await URLSession.shared.data(for: req)
             messages = (try JSONDecoder().decode(Reply.self, from: data)).messages
+            NotificationManager.shared.setVoicemailUnread(messages.filter(\.isUnread).count)
             status = messages.isEmpty ? "No voicemails." : nil
         } catch {
             status = "Couldn't load messages — pull down to retry."
@@ -531,6 +552,27 @@ struct VoicemailView: View {
         player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
         player?.play()
         playingId = m.id
+        // Server marks the message read when it serves the audio; mirror it in the UI.
+        updateLocalRead(id: m.id, read: true)
+    }
+
+    /// READ/UNREAD 1.1 — flip a voicemail's read state on the server, then locally.
+    private func setRead(_ m: VMessage, to read: Bool) async {
+        guard let p = session.provisioning, let tok = session.userToken(for: p) else { return }
+        var req = URLRequest(url: p.apiBase.appendingPathComponent("user/voicemail/\(m.id)/read"))
+        req.httpMethod = "PUT"
+        req.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization")
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: ["read": read])
+        _ = try? await URLSession.shared.data(for: req)
+        updateLocalRead(id: m.id, read: read)
+    }
+
+    private func updateLocalRead(id: Int, read: Bool) {
+        if let i = messages.firstIndex(where: { $0.id == id }) {
+            messages[i].read = read ? 1 : 0
+        }
+        NotificationManager.shared.setVoicemailUnread(messages.filter(\.isUnread).count)
     }
 }
 
