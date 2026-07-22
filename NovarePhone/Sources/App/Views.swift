@@ -218,6 +218,7 @@ private struct NovareChrome: ViewModifier {
     @State private var showMessages = false
     @State private var showVoicemail = false
     @State private var showSettings = false
+    @ObservedObject private var notifs = NotificationManager.shared
 
     func body(content: Content) -> some View {
         content
@@ -235,8 +236,12 @@ private struct NovareChrome: ViewModifier {
             }
             .toolbar {
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { showMessages = true } label: { Image(systemName: "message.fill") }
-                    Button { showVoicemail = true } label: { Image(systemName: "recordingtape") }
+                    Button { showMessages = true } label: {
+                        Image(systemName: "message.fill").countBadge(notifs.smsUnread)
+                    }
+                    Button { showVoicemail = true } label: {
+                        Image(systemName: "recordingtape").countBadge(notifs.vmUnread)
+                    }
                     Button { showSettings = true } label: { Image(systemName: "gearshape.fill") }
                 }
             }
@@ -312,6 +317,7 @@ struct DialerView: View {
     @State private var showMessages = false
     @State private var dnd = SipEngine.shared.dndEnabled
     @StateObject private var history = CallHistory.shared
+    @ObservedObject private var notifs = NotificationManager.shared
     private let keys = ["1","2","3","4","5","6","7","8","9","*","0","#"]
 
     var body: some View {
@@ -329,11 +335,13 @@ struct DialerView: View {
                 // MESSAGES 1.1: business texting from the Nováre main number.
                 Button { showMessages = true } label: {
                     Image(systemName: "message.fill").font(.title3)
+                        .countBadge(notifs.smsUnread)
                 }
                 // Voicemail moved here from the tab bar (Ext took its slot —
                 // iOS caps the bottom bar at 5). Same full voicemail screen.
                 Button { showVoicemail = true } label: {
                     Image(systemName: "recordingtape").font(.title3)
+                        .countBadge(notifs.vmUnread)
                 }
                 Button { showSettings = true } label: {
                     Image(systemName: "gearshape.fill").font(.title3)

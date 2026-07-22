@@ -31,6 +31,7 @@ struct NovarePhoneApp: App {
             if phase == .active {
                 SipEngine.shared.ensureRegistered()
                 SipEngine.shared.startRegistrationHeartbeat()   // REG-HEARTBEAT 1.0.14: self-heal a lapsed registration while open
+                Task { await NotificationManager.shared.refreshServerCounts() }   // BADGES 1.1: light up VM/Messages counts
             } else if phase == .background {
                 SipEngine.shared.stopRegistrationHeartbeat()
             }
