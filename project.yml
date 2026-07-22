@@ -15,7 +15,7 @@ packages:
 settings:
   base:
     MARKETING_VERSION: "1.1"
-    CURRENT_PROJECT_VERSION: "38"
+    CURRENT_PROJECT_VERSION: "39"
     DEVELOPMENT_TEAM: "8S8JBLPQ9Z"
     SWIFT_VERSION: "5.0"
 
@@ -67,6 +67,20 @@ targets:
         # capability enabled on the App ID.
         NSUserActivityTypes:
           - INStartCallIntent
+        # CARPLAY 1.1: declare the CarPlay scene so the head unit instantiates
+        # CarPlaySceneDelegate (Recents/Favorites + calling). Only the CarPlay
+        # scene is declared; SwiftUI still manages the phone window scene
+        # automatically. Runtime activation additionally needs Apple's managed
+        # `com.apple.developer.carplay-calling` entitlement on the App ID (a
+        # request to Apple) — without it the app is unaffected, CarPlay just
+        # doesn't appear. Not added to the signed entitlements yet so dev/
+        # TestFlight signing keeps working until Apple grants it.
+        UIApplicationSceneManifest:
+          UIApplicationSupportsMultipleScenes: true
+          UISceneConfigurations:
+            CPTemplateApplicationSceneSessionRoleApplication:
+              - UISceneConfigurationName: "Nóvare CarPlay"
+                UISceneDelegateClassName: "$(PRODUCT_MODULE_NAME).CarPlaySceneDelegate"
         # Call recordings land in Documents — these make them visible in the Files app.
         UIFileSharingEnabled: true
         LSSupportsOpeningDocumentsInPlace: true
