@@ -1,6 +1,7 @@
 import Foundation
 import CallKit
 import AVFAudio
+import UIKit
 
 /// CallKit integration — the native ring screen, lock-screen answer, and the
 /// system's audio session handoff. One CXProvider for the app's lifetime.
@@ -83,7 +84,23 @@ final class CallManager: NSObject, CXProviderDelegate {
         UserDefaults.standard.string(forKey: lastDialedKey)
     }
 
+    /// SAFETY 1.0.17 — never place 911 (or the 933 e911-test line) over VoIP.
+    /// A softphone SIP call to 911 may not reach the caller's LOCAL emergency
+    /// center and does not carry cellular location, so it's a genuine hazard.
+    /// Hand the call to the iPhone's native cellular dialer, which routes
+    /// emergency calls correctly. Returns true if it handled (caller must stop).
+    static func emergencyHandoffIfNeeded(_ number: String) -> Bool {
+        let digits = number.filter(\.isNumber)
+        guard digits == "911" || digits == "933" else { return false }
+        AppLog.shared.write("[EMERGENCY] \(digits) dialed — handing off to native cellular dialer, NOT VoIP")
+        if let url = URL(string: "tel://\(digits)") {
+            DispatchQueue.main.async { UIApplication.shared.open(url) }
+        }
+        return true
+    }
+
     func startOutgoingCall(to number: String) {
+        if Self.emergencyHandoffIfNeeded(number) { return }   // 911/933 -> native cellular dialer
         UserDefaults.standard.set(number, forKey: Self.lastDialedKey)
         let uuid = UUID()
         activeCallUUID = uuid

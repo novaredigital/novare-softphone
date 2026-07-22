@@ -477,6 +477,12 @@ final class SipEngine {
     // MARK: - Call control (invoked by CallManager only)
 
     func placeCall(to number: String) {
+        // SAFETY 1.0.17 backstop: 911/933 must never go over VoIP even if a code
+        // path reaches placeCall directly — hand off to the native dialer.
+        if CallManager.emergencyHandoffIfNeeded(number) {
+            log("[EMERGENCY] \(number) intercepted at placeCall — handed to native dialer, no SIP")
+            return
+        }
         placeCall(to: number, attempt: 0)
     }
 
