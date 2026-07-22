@@ -222,13 +222,18 @@ private struct NovareChrome: ViewModifier {
     func body(content: Content) -> some View {
         content
             .navigationBarTitleDisplayMode(.inline)
+            // Logo strip under the top bar — roughly double the old in-bar size
+            // (Mark 2026-07-22); safeAreaInset pushes the page content down.
+            .safeAreaInset(edge: .top, spacing: 0) {
+                Image("NovareTelecomLogo")
+                    .resizable().scaledToFit()
+                    .frame(height: 52)
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 4)
+                    .background(.bar)
+                    .accessibilityLabel("Nováre Telecom")
+            }
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Image("NovareTelecomLogo")
-                        .resizable().scaledToFit()
-                        .frame(height: 26)
-                        .accessibilityLabel("Nováre Telecom")
-                }
                 ToolbarItemGroup(placement: .topBarTrailing) {
                     Button { showMessages = true } label: { Image(systemName: "message.fill") }
                     Button { showVoicemail = true } label: { Image(systemName: "recordingtape") }
