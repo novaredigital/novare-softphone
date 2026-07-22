@@ -342,7 +342,7 @@ struct DialerView: View {
             .padding(.horizontal)
             Image("NovareTelecomLogo")
                 .resizable().scaledToFit()
-                .frame(maxWidth: 180)
+                .frame(maxWidth: 234)          // +30% (Mark 2026-07-22)
                 .padding(.top, 2)
             if session.accounts.count > 1 {
                 Menu {
@@ -363,7 +363,7 @@ struct DialerView: View {
                 }
                 .padding(.top, 8)
             }
-            Spacer()
+            Spacer().frame(height: 10)     // tightened so the keypad rides up (Mark)
             Text(number.isEmpty ? " " : number)
                 .font(.system(size: 34, weight: .medium, design: .rounded))
                 .lineLimit(1).minimumScaleFactor(0.4)
@@ -404,7 +404,8 @@ struct DialerView: View {
                 Button { if !number.isEmpty { number.removeLast() } } label: {
                     Image(systemName: "delete.left").font(.title2)
                         .frame(width: 82, height: 82)
-                }.disabled(number.isEmpty)
+                        .background(Circle().fill(Color(.secondarySystemBackground)))  // match the keys (Mark)
+                }.buttonStyle(.plain).disabled(number.isEmpty)
             }
             .frame(width: 320)
             Spacer()
