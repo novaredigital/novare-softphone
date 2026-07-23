@@ -28,6 +28,11 @@ targets:
     dependencies:
       - package: linphonesw
         product: linphonesw
+      # CARPLAY REQUIREMENT: a communication app must ship a SiriKit intents
+      # extension handling start-call + search-call-history, or iOS never treats
+      # it as CarPlay-capable (see NovarePhoneIntents target below).
+      - target: NovarePhoneIntents
+        embed: true
     settings:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.novaredigital.novarephone
@@ -61,12 +66,16 @@ targets:
         # (When-In-Use) location for support diagnostics and emergency calls,
         # opt-out any time in Settings.
         NSLocationWhenInUseUsageDescription: "Nováre Phone can share your phone's location with Nóvare Telecom for support and emergency-call purposes. It is only shared while the app is open, is visible only to Nóvare, and you can opt out at any time in Settings."
-        # SIRI 1.1: declare INStartCallIntent so 'call X on Nováre Phone' can route
-        # to the app (via NSUserActivity) and donated calls surface in Siri
-        # Suggestions/Shortcuts. Full voice recognition also needs the Siri
-        # capability enabled on the App ID.
+        # SIRI 1.1 + CARPLAY REQUIREMENT: 'call X on Nováre Phone' routes to the
+        # app via NSUserActivity, and donated calls surface in Siri Suggestions.
+        # INStartAudioCallIntent + INSearchCallHistoryIntent are MANDATORY for a
+        # CarPlay communication app ("a VoIP app must allow the user to search
+        # the call history and start audio calls using Siri") — without them the
+        # app never appears in CarPlay at all, regardless of entitlement.
         NSUserActivityTypes:
           - INStartCallIntent
+          - INStartAudioCallIntent
+          - INSearchCallHistoryIntent
         # CARPLAY 1.1: declare the CarPlay scene so the head unit instantiates
         # CarPlaySceneDelegate (Recents/Favorites + calling). Only the CarPlay
         # scene is declared; SwiftUI still manages the phone window scene
@@ -93,3 +102,32 @@ targets:
         LSSupportsOpeningDocumentsInPlace: true
         UILaunchScreen:
           UIColorName: ""
+
+  # ── SiriKit Intents extension ────────────────────────────────────────────
+  # REQUIRED for CarPlay communication apps. iOS only lists a VoIP app in
+  # CarPlay if it declares AND handles INStartAudioCallIntent (start a call) and
+  # INSearchCallHistoryIntent (search recents) via an Intents extension.
+  NovarePhoneIntents:
+    type: app-extension
+    platform: iOS
+    sources:
+      - path: NovarePhone/IntentsExtension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.novaredigital.novarephone.Intents
+        CODE_SIGN_STYLE: Automatic
+        GENERATE_INFOPLIST_FILE: NO
+        SKIP_INSTALL: YES
+    info:
+      path: NovarePhone/IntentsExtension/Info.plist
+      properties:
+        CFBundleDisplayName: "Nováre Phone"
+        CFBundlePackageType: XPC!
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.intents-service
+          NSExtensionPrincipalClass: "$(PRODUCT_MODULE_NAME).IntentHandler"
+          NSExtensionAttributes:
+            IntentsSupported:
+              - INStartCallIntent
+              - INStartAudioCallIntent
+              - INSearchCallHistoryIntent
