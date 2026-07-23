@@ -79,7 +79,14 @@ targets:
           UIApplicationSupportsMultipleScenes: true
           UISceneConfigurations:
             CPTemplateApplicationSceneSessionRoleApplication:
-              - UISceneConfigurationName: "Nóvare CarPlay"
+              # UISceneClassName is REQUIRED for CarPlay template scenes. Without
+              # it iOS never treats the app as CarPlay-capable: the app does not
+              # appear in Settings > General > CarPlay > <car> > Customize, and
+              # the head unit never hands it a scene (proven on Mark's 2025 Audi
+              # 2026-07-23 — entitlement, delegate and car icon were all correct
+              # and it still never connected until this key was added).
+              - UISceneClassName: CPTemplateApplicationScene
+                UISceneConfigurationName: "Nóvare CarPlay"
                 UISceneDelegateClassName: "$(PRODUCT_MODULE_NAME).CarPlaySceneDelegate"
         # Call recordings land in Documents — these make them visible in the Files app.
         UIFileSharingEnabled: true
