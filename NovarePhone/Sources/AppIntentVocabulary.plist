@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Siri example phrases. REQUIRED once an app declares SiriKit intents:
+	     Apple's delivery check ITMS-90626 warns for every declared intent that
+	     has no example phrase in the app's development language ('en'). Build 41
+	     shipped with three such warnings (INStartCallIntent, INStartAudioCallIntent,
+	     INSearchCallHistoryIntent) — delivery still succeeded, but the phrases
+	     belong here so users are shown what they can say, and so the warnings
+	     stop. IntentName drops the trailing "Intent" (INStartCallIntent ->
+	     INStartCall). -->
+	<key>IntentPhrases</key>
+	<array>
+		<dict>
+			<key>IntentName</key>
+			<string>INStartCall</string>
+			<key>IntentExamples</key>
+			<array>
+				<string>Call Erik on Nováre Phone</string>
+				<string>Call the office with Nováre Phone</string>
+				<string>Use Nováre Phone to call Erik</string>
+			</array>
+		</dict>
+		<dict>
+			<key>IntentName</key>
+			<string>INStartAudioCall</string>
+			<key>IntentExamples</key>
+			<array>
+				<string>Call Erik on Nováre Phone</string>
+				<string>Make a call with Nováre Phone</string>
+				<string>Call the office using Nováre Phone</string>
+			</array>
+		</dict>
+		<dict>
+			<key>IntentName</key>
+			<string>INSearchCallHistory</string>
+			<key>IntentExamples</key>
+			<array>
+				<string>Did I miss any calls on Nováre Phone</string>
+				<string>Show my recent Nováre Phone calls</string>
+				<string>Check my missed calls in Nováre Phone</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
