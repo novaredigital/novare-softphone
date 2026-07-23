@@ -15,7 +15,7 @@ packages:
 settings:
   base:
     MARKETING_VERSION: "1.1"
-    CURRENT_PROJECT_VERSION: "39"
+    CURRENT_PROJECT_VERSION: "40"
     DEVELOPMENT_TEAM: "8S8JBLPQ9Z"
     SWIFT_VERSION: "5.0"
 
@@ -71,10 +71,10 @@ targets:
         # CarPlaySceneDelegate (Recents/Favorites + calling). Only the CarPlay
         # scene is declared; SwiftUI still manages the phone window scene
         # automatically. Runtime activation additionally needs Apple's managed
-        # `com.apple.developer.carplay-calling` entitlement on the App ID (a
-        # request to Apple) — without it the app is unaffected, CarPlay just
-        # doesn't appear. Not added to the signed entitlements yet so dev/
-        # TestFlight signing keeps working until Apple grants it.
+        # `com.apple.developer.carplay-calling` entitlement. Apple GRANTED that
+        # entitlement 2026-07-23 (Case 21185334) and it is now in the signed
+        # entitlements file. It still must be enabled on the App ID in the
+        # developer portal — until it is, device builds will fail to sign.
         UIApplicationSceneManifest:
           UIApplicationSupportsMultipleScenes: true
           UISceneConfigurations:

@@ -8,5 +8,13 @@
 	     automatically for dev-signed builds. -->
 	<key>aps-environment</key>
 	<string>production</string>
+	<!-- CARPLAY 1.1 (Apple Case 21185334, granted 2026-07-23): Apple's managed
+	     entitlement for a CarPlay *calling* app. Enables CarPlaySceneDelegate
+	     (Recents / Favorites / Contacts, dialling through CallKit) on the head
+	     unit. REQUIRES the CarPlay capability to be enabled on the App ID in the
+	     developer portal first — with this key present but the App ID lacking the
+	     capability, provisioning fails and NO device build will sign. -->
+	<key>com.apple.developer.carplay-calling</key>
+	<true/>
 </dict>
 </plist>
