@@ -47,9 +47,18 @@ targets:
       properties:
         CFBundleDisplayName: "Nováre Phone"
         # CallKit + VoIP push wake need these background modes.
+        # `location` added 2026-07-23 (GPS 1.2): iOS suspends a backgrounded app
+        # unless it declares a mode, and with When-In-Use it refuses to hand over
+        # a location while backgrounded at all — so a phone in a pocket reported
+        # nothing (field-proven that day). This mode + Always authorization is
+        # what lets significant-change monitoring wake/relaunch the app on real
+        # movement. HOW MUCH it then reports is the server's policy switch
+        # (foreground | emergency | continuous), so behaviour can change without
+        # another App Store review.
         UIBackgroundModes:
           - voip
           - audio
+          - location
         # Pre-answers App Store Connect's export-compliance question (the app
         # uses only exempt encryption: HTTPS/TLS) — without it every uploaded
         # build sits "not internally testable" until answered by hand.
@@ -61,6 +70,10 @@ targets:
         # (When-In-Use) location for support diagnostics and emergency calls,
         # opt-out any time in Settings.
         NSLocationWhenInUseUsageDescription: "Nováre Phone can share your phone's location with Nóvare Telecom for support and emergency-call purposes. It is only shared while the app is open, is visible only to Nóvare, and you can opt out at any time in Settings."
+        # GPS 1.2 "Always" string — this is the text Apple's reviewer reads, so it
+        # states the benefit to the PERSON CARRYING THE PHONE (being found in an
+        # emergency), not just the employer's interest. Keep it honest and specific.
+        NSLocationAlwaysAndWhenInUseUsageDescription: "Nováre Phone can share your work phone's location with Nóvare Telecom so you can be located in an emergency and so support can tell whether your phone is out of coverage. Background location lets this work when the app is not open — for example if you are hurt, lost, or your phone is in your pocket. Your location is visible only to Nóvare, is never sold or shared, and you can opt out at any time in Settings."
         # SIRI 1.1: declare INStartCallIntent so 'call X on Nováre Phone' can route
         # to the app (via NSUserActivity) and donated calls surface in Siri
         # Suggestions/Shortcuts. Full voice recognition also needs the Siri

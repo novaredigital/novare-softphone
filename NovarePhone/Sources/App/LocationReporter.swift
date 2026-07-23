@@ -2,30 +2,46 @@ import Foundation
 import CoreLocation
 import UIKit
 
-/// GPS 1.1 — location reporting to Nóvare support (consent-first).
+/// GPS 1.2 — location reporting to Nóvare support (consent-first).
 ///
 /// The SERVER is the source of truth for consent (notice-based with opt-out;
 /// opting out wipes that extension's stored history immediately, and the PBX
 /// remembers the choice across devices). This class:
 ///  1. asks each signed-in line's server `GET /user/location/consent`,
-///  2. when the server says enabled+consented, asks iOS for When-In-Use —
-///     the OS permission prompt IS the user-facing notice (its purpose text
-///     mirrors the server's; Mark removed the extra in-app alert 2026-07-22:
-///     owner consent is already recorded server-side and the portal shows
-///     the notice),
-///  3. sends `POST /user/location {lat, lon, accuracy_m}` on foreground /
-///     registration and as the phone moves — FOREGROUND ONLY in v1: the only
-///     iOS permission requested is When-In-Use and there is no location
-///     background mode, so nothing is ever reported while the app is closed,
-///  4. mirrors the consent state in a Settings toggle (the opt-out lives
-///     there and in the client portal).
+///  2. when the server says enabled+consented, asks iOS for permission — the OS
+///     prompt IS the user-facing notice (its purpose text mirrors the server's;
+///     Mark removed the extra in-app alert 2026-07-22),
+///  3. sends `POST /user/location {lat, lon, accuracy_m}`,
+///  4. mirrors the consent state in a Settings toggle.
+///
+/// ── 2026-07-23: BACKGROUND CAPABILITY + SERVER-DRIVEN POLICY (Mark) ──────────
+/// v1 was foreground-only, which meant a phone in a pocket reported nothing —
+/// proven in the field 2026-07-23 (Erik's line logged fixes only in the minutes
+/// around a call he *placed*, because dialling out is what brought the app
+/// forward; an incoming call never does).
+///
+/// iOS gives no way to "just keep running": a backgrounded app is suspended
+/// unless it declares a background mode, and — the part that actually bites —
+/// With "When In Use" permission iOS refuses to hand over a location while
+/// backgrounded even during a VoIP wake. So the fix is BOTH the `location`
+/// background mode AND `Always` authorization.
+///
+/// The capability ships once; HOW MUCH it reports is the server's call
+/// (`mode` on the consent reply), so the behaviour can be retuned from a
+/// settings row without another App Store review:
+///   • `.foreground` — v1 behaviour, only while the app is on screen (default,
+///                     and what every pre-2026-07-23 server implies)
+///   • `.emergency`  — background-capable but SILENT: significant-change is
+///                     armed only so iOS keeps the app alive/relaunchable, and
+///                     a fix is sent when an admin triggers a locate. Lowest
+///                     battery, gentlest privacy story. Mark's preferred default.
+///   • `.continuous` — background breadcrumbs as the phone moves.
 ///
 /// Server replies: `{ok:true,throttled:true}` = accepted-but-dropped (the
 /// server keeps at most one report/min per extension — never retry);
 /// 403 = disabled or opted out → stop sending until a consent GET says
-/// otherwise. Servers WITHOUT the endpoint (404 — e.g. a PBX that hasn't
-/// shipped the module) leave the feature fully dormant: no prompt, no toggle,
-/// no reports.
+/// otherwise. Servers WITHOUT the endpoint (404) leave the feature fully
+/// dormant: no prompt, no toggle, no reports.
 @MainActor
 final class LocationReporter: NSObject, ObservableObject {
     static let shared = LocationReporter()
@@ -41,24 +57,31 @@ final class LocationReporter: NSObject, ObservableObject {
     /// At least one line's server offers the endpoint (shows the Settings row).
     @Published private(set) var offered = false
 
+    /// Reporting policy handed down by the server (see the class note).
+    enum Mode: String { case foreground, emergency, continuous }
+    @Published private(set) var mode: Mode = .foreground
+
     private let manager = CLLocationManager()
     private var eligible: Set<String> = []      // line keys consented per last GET
     private var stopped: Set<String> = []       // 403'd lines — cleared on next GET
-    private var lastSend: [String: Date] = [:]  // client-side 1/min politeness per line
+    private var lastSend: [String: Date] = [:]  // client-side 1/min politeness per server
     private var monitoring = false
+    private var sigMonitoring = false           // significant-change (background) armed
     private var lastLocation: CLLocation?       // most recent fix, for the heartbeat
     private var heartbeat: Timer?               // periodic re-report while foregrounded
 
     /// GPS 1.1 heartbeat (Mark 2026-07-22): without this the app only reports on
     /// a ~500 m move, so a stationary phone updates the location log exactly once
     /// (when foregrounded) and then looks frozen. This timer re-sends the last
-    /// known fix on a fixed cadence WHILE THE APP IS OPEN — still foreground-only
-    /// (it's torn down on background), still cheap. 65 s clears the server's 60 s
-    /// throttle so each tick is accepted rather than dropped.
+    /// known fix on a fixed cadence WHILE THE APP IS OPEN. 65 s clears the
+    /// server's 60 s throttle so each tick is accepted rather than dropped.
     private let heartbeatInterval: TimeInterval = 65
 
     private let noticeShownKey = "com.novaredigital.novarephone.location.noticeShown"
     private let optedOutKey = "com.novaredigital.novarephone.location.optedOut"
+
+    /// True when the current policy needs the app to work while backgrounded.
+    private var wantsBackground: Bool { mode == .emergency || mode == .continuous }
 
     private override init() {
         super.init()
@@ -73,6 +96,7 @@ final class LocationReporter: NSObject, ObservableObject {
     private struct ConsentReply: Codable {
         let enabled: Bool; let consented: Bool; let notice: String
         let explicit: Bool?   // absent on pre-v2 servers → treat as recorded (no alert)
+        let mode: String?     // absent on pre-2026-07-23 servers → .foreground
     }
 
     /// Re-learn consent from every line's server. Runs on foreground and after
@@ -82,6 +106,7 @@ final class LocationReporter: NSObject, ObservableObject {
         var anyOffered = false
         var needsNotice: String?   // notice text when some line's consent is only presumed
         var newEligible: Set<String> = []
+        var strongestMode: Mode = .foreground
         for p in session.accounts {
             guard let tok = session.userToken(for: p) else { continue }
             var req = URLRequest(url: p.apiBase.appendingPathComponent("user/location/consent"))
@@ -93,17 +118,23 @@ final class LocationReporter: NSObject, ObservableObject {
             if r.enabled && r.consented {
                 newEligible.insert(p.key)
                 if !(r.explicit ?? true) && needsNotice == nil { needsNotice = r.notice }
+                // Most permissive wins when lines disagree: a phone can only have
+                // one iOS permission level, so the strongest requirement governs.
+                if let m = r.mode.flatMap(Mode.init(rawValue:)) {
+                    if m == .continuous { strongestMode = .continuous }
+                    else if m == .emergency && strongestMode != .continuous { strongestMode = .emergency }
+                }
             }
         }
         offered = anyOffered
         eligible = newEligible
+        mode = newEligible.isEmpty ? .foreground : strongestMode
         stopped.removeAll()   // a 403 stop holds only until the server says otherwise
         sharingOn = !eligible.isEmpty && !UserDefaults.standard.bool(forKey: optedOutKey)
-        // Notice policy (Mark 2026-07-22): phones with RECORDED consent
-        // (owner-seeded or previously accepted) go straight to the iOS
-        // When-In-Use prompt — no extra alert. Only presumed-consent lines
-        // (future/customer phones) get the one-time [OK]/[Opt Out] alert,
-        // and [OK] records their consent so it never shows again.
+        // Notice policy (Mark 2026-07-22): phones with RECORDED consent go
+        // straight to the iOS prompt — no extra alert. Only presumed-consent
+        // lines get the one-time [OK]/[Opt Out] alert, and [OK] records their
+        // consent so it never shows again.
         if let text = needsNotice,
            !UserDefaults.standard.bool(forKey: noticeShownKey),
            !UserDefaults.standard.bool(forKey: optedOutKey) {
@@ -123,7 +154,7 @@ final class LocationReporter: NSObject, ObservableObject {
     }
 
     /// [OK] on the notice — record consent server-side (it becomes explicit,
-    /// so the alert never returns), then ask iOS for When-In-Use.
+    /// so the alert never returns), then ask iOS for permission.
     func acceptNotice() {
         UserDefaults.standard.set(true, forKey: noticeShownKey)
         UserDefaults.standard.set(false, forKey: optedOutKey)
@@ -155,9 +186,34 @@ final class LocationReporter: NSObject, ObservableObject {
     // MARK: - App lifecycle hooks
 
     func appActive() async { await refresh() }
-    func appBackground() { if monitoring { manager.stopUpdatingLocation(); monitoring = false; stopHeartbeat() } }
+
+    /// Going to the background. Under `.foreground` policy everything stops (v1
+    /// behaviour). Under a background policy the continuous updates stop but
+    /// significant-change stays armed — that is what lets iOS relaunch the app
+    /// after it is killed or the phone reboots.
+    func appBackground() {
+        if monitoring { manager.stopUpdatingLocation(); monitoring = false; stopHeartbeat() }
+        syncMonitoring()
+    }
+
     /// A line's /user login just landed (launch, foreground re-login, QR sign-in).
     func tokensUpdated() { Task { await refresh() } }
+
+    /// EMERGENCY LOCATE (Mark 2026-07-23) — called when the PBX pushes a locate
+    /// request. Grabs whatever fix is available and reports it once, regardless
+    /// of policy, so `.emergency` phones stay silent until they are actually
+    /// needed. Safe to call from a background push wake.
+    func performEmergencyLocate() {
+        AppLog.shared.write("[GPS] emergency locate requested")
+        guard permitted, !eligible.isEmpty else {
+            AppLog.shared.write("[GPS] emergency locate skipped — no permission/consent")
+            return
+        }
+        // requestLocation() delivers one fix then stops — the cheapest way to
+        // answer a locate without arming continuous updates.
+        manager.requestLocation()
+        if let loc = lastLocation ?? manager.location { send(loc, force: true) }
+    }
 
     // MARK: - Internals
 
@@ -188,20 +244,36 @@ final class LocationReporter: NSObject, ObservableObject {
             || manager.authorizationStatus == .authorizedAlways
     }
 
+    /// Ask for the level the current policy needs. Background policies require
+    /// `Always`; iOS only allows escalating to it AFTER When-In-Use has been
+    /// granted, so this walks the two-step path Apple mandates.
     private func requestPermissionIfNeeded() {
-        if manager.authorizationStatus == .notDetermined {
+        switch manager.authorizationStatus {
+        case .notDetermined:
             manager.requestWhenInUseAuthorization()
+        case .authorizedWhenInUse where wantsBackground:
+            manager.requestAlwaysAuthorization()
+        default:
+            break
         }
     }
 
-    /// One monitoring path: while the app is frontmost and sharing is on,
-    /// continuous coarse updates run; the first fix after foregrounding IS the
-    /// "on foreground/registration" report, the 500 m filter delivers the
-    /// significant-change ones, and the heartbeat re-sends the last fix on a
-    /// fixed cadence so a stationary phone still updates. All stops on background.
+    /// One monitoring path, driven by policy.
+    ///  • foreground-visible + sharing on  → continuous updates + heartbeat
+    ///  • background policy                → significant-change stays armed so the
+    ///    OS wakes/relaunches us on real movement (this is what survives the app
+    ///    being killed); `.continuous` also reports each of those wakes.
     private func syncMonitoring() {
-        let want = sharingOn && !eligible.isEmpty && permitted
-            && UIApplication.shared.applicationState != .background
+        let base = sharingOn && !eligible.isEmpty && permitted
+        let visible = UIApplication.shared.applicationState != .background
+
+        // Background updates are only legal once Always is granted; setting this
+        // without the background mode + Always would crash/no-op, so gate it.
+        let canBackground = base && wantsBackground && manager.authorizationStatus == .authorizedAlways
+        manager.allowsBackgroundLocationUpdates = canBackground
+        manager.pausesLocationUpdatesAutomatically = !canBackground
+
+        let want = base && visible
         if want && !monitoring {
             manager.startUpdatingLocation()
             monitoring = true
@@ -211,6 +283,19 @@ final class LocationReporter: NSObject, ObservableObject {
             manager.stopUpdatingLocation()
             monitoring = false
             stopHeartbeat()
+        }
+
+        // Significant-change: the always-on, low-power baseline. Cheap enough to
+        // leave armed permanently under a background policy.
+        if canBackground && !sigMonitoring {
+            manager.startMonitoringSignificantLocationChanges()
+            sigMonitoring = true
+            AppLog.shared.write("[GPS] significant-change monitoring ARMED (mode=\(mode.rawValue))")
+        }
+        if !canBackground && sigMonitoring {
+            manager.stopMonitoringSignificantLocationChanges()
+            sigMonitoring = false
+            AppLog.shared.write("[GPS] significant-change monitoring stopped")
         }
     }
 
@@ -229,12 +314,21 @@ final class LocationReporter: NSObject, ObservableObject {
 
     private func stopHeartbeat() { heartbeat?.invalidate(); heartbeat = nil }
 
-    private func send(_ loc: CLLocation) {
+    /// Report a fix — ONCE PER SERVER, not once per line (Mark 2026-07-23:
+    /// "only one line or the phone needs to be tracked, all lines are connected
+    /// to the one app"). Before this, one phone running 16 lines filed 16
+    /// identical rows per heartbeat and stacked 16 pins on the map. Lines are
+    /// grouped by their server so a phone signed into two different PBXs still
+    /// reports to each, but each server hears from the device exactly once.
+    private func send(_ loc: CLLocation, force: Bool = false) {
         let session = SessionStore.shared
+        var seenServers: Set<String> = []
         for p in session.accounts where eligible.contains(p.key) && !stopped.contains(p.key) {
-            if let last = lastSend[p.key], Date().timeIntervalSince(last) < 60 { continue }
+            let serverKey = p.apiBase.absoluteString
+            guard seenServers.insert(serverKey).inserted else { continue }   // one line per server
+            if !force, let last = lastSend[serverKey], Date().timeIntervalSince(last) < 60 { continue }
             guard let tok = session.userToken(for: p) else { continue }
-            lastSend[p.key] = Date()
+            lastSend[serverKey] = Date()
             struct Body: Codable { let lat: Double; let lon: Double; let accuracy_m: Double }
             var req = URLRequest(url: p.apiBase.appendingPathComponent("user/location"))
             req.httpMethod = "POST"
@@ -263,13 +357,23 @@ final class LocationReporter: NSObject, ObservableObject {
 extension LocationReporter: CLLocationManagerDelegate {
     nonisolated func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
         guard let loc = locations.last else { return }
-        DispatchQueue.main.async { self.lastLocation = loc; self.send(loc) }
+        DispatchQueue.main.async {
+            self.lastLocation = loc
+            // Under `.emergency` the app stays silent in the background — the
+            // significant-change wake exists only to keep it alive for a locate.
+            if self.mode == .emergency,
+               UIApplication.shared.applicationState == .background { return }
+            self.send(loc)
+        }
     }
     nonisolated func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {
         // Transient fix failures are normal indoors; the next update wins.
     }
     nonisolated func locationManagerDidChangeAuthorization(_ manager: CLLocationManager) {
-        // Covers the user answering the When-In-Use prompt either way.
-        DispatchQueue.main.async { self.syncMonitoring() }
+        // Covers the user answering the prompt (either level) either way.
+        DispatchQueue.main.async {
+            self.requestPermissionIfNeeded()   // escalate WhenInUse → Always if policy needs it
+            self.syncMonitoring()
+        }
     }
 }
