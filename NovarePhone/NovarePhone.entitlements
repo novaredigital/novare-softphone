@@ -14,7 +14,7 @@
 	     unit. REQUIRES the CarPlay capability to be enabled on the App ID in the
 	     developer portal first — with this key present but the App ID lacking the
 	     capability, provisioning fails and NO device build will sign. -->
-	<key>com.apple.developer.carplay-calling</key>
+	<key>com.apple.developer.carplay-communication</key>
 	<true/>
 </dict>
 </plist>
