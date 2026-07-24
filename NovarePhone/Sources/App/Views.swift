@@ -557,25 +557,36 @@ struct VoicemailView: View {
     }
 }
 
+/// One voicemail plus which line it belongs to, so a MERGED multi-line list can
+/// play / mark / delete each message against the correct line's token + API
+/// (Mark 2026-07-24: his 10 voicemails were on ext 500 but the screen only ever
+/// queried the primary line, so it showed empty).
+struct VMItem: Identifiable {
+    let account: Provisioning
+    var msg: VMessage
+    var id: String { account.key + "#" + String(msg.id) }
+}
+
 /// The voicemail list — NO NavigationStack of its own, so it drops cleanly into
 /// either the standalone VoicemailView or the Recents "Voicemail" segment.
+/// Aggregates voicemail across EVERY signed-in line.
 struct VoicemailList: View {
     @EnvironmentObject var session: SessionStore
-    @State private var messages: [VMessage] = []
+    @State private var items: [VMItem] = []          // merged across all lines, newest first
     @State private var status: String?
     @State private var player: AVPlayer?
-    @State private var playingId: Int?
+    @State private var playingId: String?            // VMItem.id currently playing
 
     var body: some View {
             List {
                 if let s = status {
                     Text(s).font(.footnote).foregroundStyle(.secondary)
                 }
-                ForEach(messages) { m in
+                ForEach(items) { it in
+                    let m = it.msg
                     VStack(alignment: .leading, spacing: 4) {
                         HStack {
-                            // READ/UNREAD 1.1: unread voicemails show a blue dot +
-                            // bold name so you know what still needs attention.
+                            // unread voicemails show a blue dot + bold name.
                             if m.isUnread {
                                 Circle().fill(Color.accentColor).frame(width: 9, height: 9)
                             }
@@ -585,6 +596,9 @@ struct VoicemailList: View {
                             Text(String((m.created_at ?? "").prefix(16)).replacingOccurrences(of: "T", with: " "))
                                 .font(.caption).foregroundStyle(.secondary)
                         }
+                        // MULTI-LINE: which of your lines this voicemail is on.
+                        Text("on \(it.account.accountName) · ext \(it.account.username)")
+                            .font(.caption2).foregroundStyle(.secondary)
                         if let cid = m.caller_id, m.caller_name != nil, !cid.isEmpty {
                             Text(cid).font(.caption).foregroundStyle(.secondary)
                         }
@@ -593,10 +607,10 @@ struct VoicemailList: View {
                         }
                         HStack(spacing: 20) {
                             Button {
-                                toggle(m)
+                                toggle(it)
                             } label: {
-                                Label(playingId == m.id ? "Stop" : "Play",
-                                      systemImage: playingId == m.id ? "stop.fill" : "play.fill")
+                                Label(playingId == it.id ? "Stop" : "Play",
+                                      systemImage: playingId == it.id ? "stop.fill" : "play.fill")
                             }
                             .buttonStyle(.bordered)
                             if let n = m.caller_id?.filter({ "0123456789+*#".contains($0) }), !n.isEmpty {
@@ -616,12 +630,10 @@ struct VoicemailList: View {
                     .padding(.vertical, 2)
                     .swipeActions(edge: .trailing) {
                         Button(role: .destructive) {
-                            Task { await deleteVM(m) }
+                            Task { await deleteVM(it) }
                         } label: { Label("Delete", systemImage: "trash") }
-                        // READ/UNREAD 1.1: flip state so you can leave one to
-                        // come back to it.
                         Button {
-                            Task { await setRead(m, to: m.isUnread) }
+                            Task { await setRead(it, to: m.isUnread) }
                         } label: {
                             Label(m.isUnread ? "Mark Read" : "Mark Unread",
                                   systemImage: m.isUnread ? "envelope.open" : "envelope.badge")
@@ -641,30 +653,37 @@ struct VoicemailList: View {
             .refreshable { await load() }
     }
 
+    struct Reply: Codable { let messages: [VMessage] }
+
+    /// Pull voicemail from EVERY signed-in line and merge, newest first — so a
+    /// message on any line (e.g. ext 500) shows up, not just the primary line.
     private func load() async {
-        guard let p = session.provisioning else { return }
-        guard let tok = session.userToken(for: p) else {
-            messages = []
-            status = "Signing this line in for messages… pull down to retry, or use Call Voicemail (*97) below."
-            return
+        let accounts = session.accounts
+        guard !accounts.isEmpty else { status = "Sign in to see voicemail."; items = []; return }
+        var merged: [VMItem] = []
+        var anyToken = false
+        for p in accounts {
+            guard let tok = session.userToken(for: p) else { continue }
+            anyToken = true
+            var req = URLRequest(url: p.apiBase.appendingPathComponent("user/voicemail"))
+            req.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization")
+            if let (data, resp) = try? await URLSession.shared.data(for: req),
+               (resp as? HTTPURLResponse)?.statusCode == 200,
+               let reply = try? JSONDecoder().decode(Reply.self, from: data) {
+                merged.append(contentsOf: reply.messages.map { VMItem(account: p, msg: $0) })
+            }
         }
-        var req = URLRequest(url: p.apiBase.appendingPathComponent("user/voicemail"))
-        req.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization")
-        do {
-            struct Reply: Codable { let messages: [VMessage] }
-            let (data, _) = try await URLSession.shared.data(for: req)
-            messages = (try JSONDecoder().decode(Reply.self, from: data)).messages
-            NotificationManager.shared.setVoicemailUnread(messages.filter(\.isUnread).count)
-            status = messages.isEmpty ? "No voicemails." : nil
-        } catch {
-            status = "Couldn't load messages — pull down to retry."
-        }
+        merged.sort { ($0.msg.created_at ?? "") > ($1.msg.created_at ?? "") }   // newest first
+        items = merged
+        NotificationManager.shared.setVoicemailUnread(merged.filter { $0.msg.isUnread }.count)
+        status = !anyToken ? "Signing your lines in for messages… pull down to retry, or use Call Voicemail (*97) below."
+               : (merged.isEmpty ? "No voicemails." : nil)
     }
 
-    private func toggle(_ m: VMessage) {
-        if playingId == m.id { player?.pause(); playingId = nil; return }
-        guard let p = session.provisioning, let tok = session.userToken(for: p) else { return }
-        let url = p.apiBase.appendingPathComponent("user/voicemail/\(m.id)/audio")
+    private func toggle(_ it: VMItem) {
+        if playingId == it.id { player?.pause(); playingId = nil; return }
+        guard let tok = session.userToken(for: it.account) else { return }
+        let url = it.account.apiBase.appendingPathComponent("user/voicemail/\(it.msg.id)/audio")
         // AVURLAsset carries the Bearer header the /user audio endpoint expects
         // (AVPlayer alone can't set request headers).
         let asset = AVURLAsset(url: url, options: [
@@ -672,40 +691,40 @@ struct VoicemailList: View {
         ])
         player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
         player?.play()
-        playingId = m.id
+        playingId = it.id
         // Server marks the message read when it serves the audio; mirror it in the UI.
-        updateLocalRead(id: m.id, read: true)
+        updateLocalRead(it, read: true)
     }
 
-    /// READ/UNREAD 1.1 — flip a voicemail's read state on the server, then locally.
-    private func setRead(_ m: VMessage, to read: Bool) async {
-        guard let p = session.provisioning, let tok = session.userToken(for: p) else { return }
-        var req = URLRequest(url: p.apiBase.appendingPathComponent("user/voicemail/\(m.id)/read"))
+    /// Flip a voicemail's read state on its own line's server, then locally.
+    private func setRead(_ it: VMItem, to read: Bool) async {
+        guard let tok = session.userToken(for: it.account) else { return }
+        var req = URLRequest(url: it.account.apiBase.appendingPathComponent("user/voicemail/\(it.msg.id)/read"))
         req.httpMethod = "PUT"
         req.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization")
         req.setValue("application/json", forHTTPHeaderField: "Content-Type")
         req.httpBody = try? JSONSerialization.data(withJSONObject: ["read": read])
         _ = try? await URLSession.shared.data(for: req)
-        updateLocalRead(id: m.id, read: read)
+        updateLocalRead(it, read: read)
     }
 
-    private func updateLocalRead(id: Int, read: Bool) {
-        if let i = messages.firstIndex(where: { $0.id == id }) {
-            messages[i].read = read ? 1 : 0
+    private func updateLocalRead(_ it: VMItem, read: Bool) {
+        if let i = items.firstIndex(where: { $0.id == it.id }) {
+            items[i].msg.read = read ? 1 : 0
         }
-        NotificationManager.shared.setVoicemailUnread(messages.filter(\.isUnread).count)
+        NotificationManager.shared.setVoicemailUnread(items.filter { $0.msg.isUnread }.count)
     }
 
-    /// DELETE 1.1 — remove a voicemail on the server + locally.
-    private func deleteVM(_ m: VMessage) async {
-        guard let p = session.provisioning, let tok = session.userToken(for: p) else { return }
-        if playingId == m.id { player?.pause(); playingId = nil }
-        var req = URLRequest(url: p.apiBase.appendingPathComponent("user/voicemail/\(m.id)"))
+    /// Remove a voicemail on its own line's server + locally.
+    private func deleteVM(_ it: VMItem) async {
+        guard let tok = session.userToken(for: it.account) else { return }
+        if playingId == it.id { player?.pause(); playingId = nil }
+        var req = URLRequest(url: it.account.apiBase.appendingPathComponent("user/voicemail/\(it.msg.id)"))
         req.httpMethod = "DELETE"
         req.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization")
         _ = try? await URLSession.shared.data(for: req)
-        messages.removeAll { $0.id == m.id }
-        NotificationManager.shared.setVoicemailUnread(messages.filter(\.isUnread).count)
+        items.removeAll { $0.id == it.id }
+        NotificationManager.shared.setVoicemailUnread(items.filter { $0.msg.isUnread }.count)
     }
 }
 
