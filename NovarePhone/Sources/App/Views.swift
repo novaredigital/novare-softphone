@@ -540,9 +540,24 @@ struct VMessage: Codable, Identifiable {
     let duration: Int?
     let ai_summary: String?
     let transcript: String?
+    let dialed_number: String?   // which of your numbers the caller dialed (absent on pre-2026-07-24 servers)
     var read: Int?          // 0 = unread (server-tracked); mutable so the UI can update in place
 
     var isUnread: Bool { (read ?? 1) == 0 }
+}
+
+/// Pretty-print a dialed number: 14232656000 → (423) 265-6000; extensions stay as-is.
+func vmDialedPretty(_ n: String) -> String {
+    let d = n.filter(\.isNumber)
+    if d.count == 11, d.hasPrefix("1") {
+        let a = d.dropFirst(); let p = String(a.prefix(3)); let e = String(a.dropFirst(3).prefix(3)); let l = String(a.suffix(4))
+        return "(\(p)) \(e)-\(l)"
+    }
+    if d.count == 10 {
+        let p = String(d.prefix(3)); let e = String(d.dropFirst(3).prefix(3)); let l = String(d.suffix(4))
+        return "(\(p)) \(e)-\(l)"
+    }
+    return n
 }
 
 /// Backward-compatible standalone Voicemail screen (still opened from the tape
@@ -709,6 +724,11 @@ struct VoicemailList: View {
                         // MULTI-LINE: which of your lines this voicemail is on.
                         Text("on \(it.account.accountName) · ext \(it.account.username)")
                             .font(.caption2).foregroundStyle(.secondary)
+                        // Which number the caller dialed to reach you (2026-07-24).
+                        if let dn = m.dialed_number, !dn.isEmpty {
+                            Text("Called \(vmDialedPretty(dn))")
+                                .font(.caption2).foregroundStyle(.secondary)
+                        }
                         if let cid = m.caller_id, m.caller_name != nil, !cid.isEmpty {
                             Text(cid).font(.caption).foregroundStyle(.secondary)
                         }
@@ -810,6 +830,9 @@ struct VoicemailList: View {
         var merged: [VMItem] = []
         var anyToken = false
         for p in accounts {
+            // Re-login a line whose token lapsed so its voicemail doesn't
+            // silently drop out of the merged list (Mark 2026-07-24).
+            await session.ensureUserToken(for: p)
             guard let tok = session.userToken(for: p) else { continue }
             anyToken = true
             var req = URLRequest(url: p.apiBase.appendingPathComponent("user/voicemail"))

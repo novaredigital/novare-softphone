@@ -194,6 +194,13 @@ final class SessionStore: ObservableObject {
     /// that works on shared-db production (134) AND box 5.
     func userToken(for p: Provisioning) -> String? { userTokens[p.key] }
 
+    /// Ensure a line has a /user token, re-logging in if it's missing/lapsed.
+    /// Voicemail aggregates across all lines; a lapsed token used to silently
+    /// drop that line's messages from the list ("disappeared" — Mark 2026-07-24).
+    func ensureUserToken(for p: Provisioning) async {
+        if userTokens[p.key] == nil { await userLogin(for: p) }
+    }
+
     /// Sign the line into the /user realm (extension + SIP password → token).
     /// This realm exists on every Nováre PBX and reads the extension's own
     /// mailbox from the shared db — so voicemail works on prod lines today.
