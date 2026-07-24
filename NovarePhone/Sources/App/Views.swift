@@ -567,69 +567,87 @@ struct VMItem: Identifiable {
     var id: String { account.key + "#" + String(msg.id) }
 }
 
-/// Voicemail audio player. Routes to the LOUDSPEAKER (voicemail was inaudible
-/// because the app's call audio session defaults to the earpiece), tracks
-/// position for a scrub bar, supports seek, and a speaker⇄earpiece toggle.
+/// Voicemail audio player. DOWNLOADS the audio with a normal authorized request
+/// (the old AVURLAsset-with-header trick is a flaky private API that was failing
+/// auth, so nothing played — Mark heard silence), then plays the local WAV with
+/// AVAudioPlayer through the LOUD speaker. Tracks position for a scrub bar,
+/// supports seek, and a speaker⇄earpiece toggle.
 @MainActor
-final class VMPlayer: ObservableObject {
+final class VMPlayer: NSObject, ObservableObject, AVAudioPlayerDelegate {
     @Published var currentId: String?     // VMItem.id loaded
+    @Published var loadingId: String?     // VMItem.id currently downloading
     @Published var isPlaying = false
     @Published var position: Double = 0    // seconds
     @Published var duration: Double = 0
     @Published var onSpeaker = true
+    @Published var errorText: String?
 
-    private var player: AVPlayer?
-    private var timeObs: Any?
-    private var endObs: NSObjectProtocol?
+    private var audio: AVAudioPlayer?
+    private var ticker: Timer?
 
-    /// Tap the same message = pause/resume; a different one = start it.
+    /// Tap the same message = pause/resume; a different one = load + start it.
     func toggle(url: URL, token: String, id: String) {
         if currentId == id {
-            if isPlaying { player?.pause(); isPlaying = false }
-            else { player?.play(); isPlaying = true }
+            if isPlaying { pause() } else { resume() }
             return
         }
-        start(url: url, token: token, id: id)
+        Task { await start(url: url, token: token, id: id) }
     }
 
-    private func start(url: URL, token: String, id: String) {
+    private func start(url: URL, token: String, id: String) async {
         stop()
-        onSpeaker = true
+        errorText = nil
+        loadingId = id
+        var req = URLRequest(url: url)
+        req.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        req.timeoutInterval = 20
+        do {
+            let (data, resp) = try await URLSession.shared.data(for: req)
+            let code = (resp as? HTTPURLResponse)?.statusCode ?? -1
+            loadingId = nil
+            guard code == 200, !data.isEmpty else {
+                errorText = "Couldn't load audio (HTTP \(code), \(data.count) bytes)."
+                AppLog.shared.write("[VM] audio fetch failed http=\(code) bytes=\(data.count) url=\(url.lastPathComponent)")
+                return
+            }
+            onSpeaker = true
+            applyRoute()
+            let p = try AVAudioPlayer(data: data)
+            p.delegate = self
+            p.prepareToPlay()
+            audio = p
+            currentId = id
+            duration = p.duration > 0 ? p.duration : 0
+            position = 0
+            p.play()
+            isPlaying = true
+            startTicker()
+            AppLog.shared.write("[VM] playing id=\(id) dur=\(p.duration) bytes=\(data.count)")
+        } catch {
+            loadingId = nil
+            errorText = "Can't play this message."
+            AppLog.shared.write("[VM] play error: \(error.localizedDescription)")
+        }
+    }
+
+    func pause() { audio?.pause(); isPlaying = false; ticker?.invalidate() }
+    func resume() {
+        guard audio != nil else { return }
         applyRoute()
-        let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["Authorization": "Bearer \(token)"]])
-        let item = AVPlayerItem(asset: asset)
-        let p = AVPlayer(playerItem: item)
-        player = p; currentId = id; isPlaying = true; position = 0; duration = 0
-        Task { @MainActor in
-            if let d = try? await asset.load(.duration) {
-                let s = CMTimeGetSeconds(d); if s.isFinite && s > 0 { duration = s }
-            }
-        }
-        timeObs = p.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.2, preferredTimescale: 600), queue: .main) { [weak self] t in
-            guard let self else { return }
-            let s = CMTimeGetSeconds(t); if s.isFinite { self.position = s }
-            if self.duration <= 0, let d = p.currentItem?.duration, d.isNumeric {
-                let ds = CMTimeGetSeconds(d); if ds.isFinite && ds > 0 { self.duration = ds }
-            }
-        }
-        endObs = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
-            Task { @MainActor in guard let self else { return }; self.isPlaying = false; self.position = self.duration }
-        }
-        p.play()
+        audio?.play(); isPlaying = true; startTicker()
     }
-
     func seek(to sec: Double) {
-        position = sec
-        player?.seek(to: CMTime(seconds: sec, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        let clamped = duration > 0 ? min(max(0, sec), duration) : max(0, sec)
+        position = clamped
+        audio?.currentTime = clamped
     }
-
     func toggleSpeaker() { onSpeaker.toggle(); applyRoute() }
 
     /// Loud main speaker by default (.playback); earpiece for privacy.
     private func applyRoute() {
         let s = AVAudioSession.sharedInstance()
         if onSpeaker {
-            try? s.setCategory(.playback, mode: .spokenAudio, options: [.allowBluetooth, .allowBluetoothA2DP])
+            try? s.setCategory(.playback, mode: .spokenAudio, options: [])
         } else {
             try? s.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth])
             try? s.overrideOutputAudioPort(.none)
@@ -637,11 +655,21 @@ final class VMPlayer: ObservableObject {
         try? s.setActive(true)
     }
 
+    private func startTicker() {
+        ticker?.invalidate()
+        ticker = Timer.scheduledTimer(withTimeInterval: 0.2, repeats: true) { [weak self] _ in
+            Task { @MainActor in guard let self, let a = self.audio else { return }; self.position = a.currentTime }
+        }
+    }
+
     func stop() {
-        if let o = timeObs { player?.removeTimeObserver(o); timeObs = nil }
-        if let e = endObs { NotificationCenter.default.removeObserver(e); endObs = nil }
-        player?.pause(); player = nil
-        isPlaying = false; currentId = nil; position = 0; duration = 0
+        ticker?.invalidate(); ticker = nil
+        audio?.stop(); audio = nil
+        isPlaying = false; currentId = nil; loadingId = nil; position = 0; duration = 0
+    }
+
+    nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
+        Task { @MainActor in self.isPlaying = false; self.position = self.duration; self.ticker?.invalidate() }
     }
 }
 
@@ -702,12 +730,19 @@ struct VoicemailList: View {
                                 }.font(.caption2).foregroundStyle(.secondary)
                             }
                         }
+                        if let err = vm.errorText, vm.currentId == it.id || vm.loadingId == it.id {
+                            Text(err).font(.caption2).foregroundStyle(.red)
+                        }
                         HStack(spacing: 16) {
-                            // Play / Pause
+                            // Play / Pause (spinner while the audio downloads)
                             Button {
                                 play(it)
                             } label: {
-                                Image(systemName: (vm.currentId == it.id && vm.isPlaying) ? "pause.fill" : "play.fill")
+                                if vm.loadingId == it.id {
+                                    ProgressView()
+                                } else {
+                                    Image(systemName: (vm.currentId == it.id && vm.isPlaying) ? "pause.fill" : "play.fill")
+                                }
                             }.buttonStyle(.bordered)
                             // Speakerphone toggle (loud speaker ⇄ earpiece)
                             Button {
