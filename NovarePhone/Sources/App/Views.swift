@@ -567,15 +567,97 @@ struct VMItem: Identifiable {
     var id: String { account.key + "#" + String(msg.id) }
 }
 
+/// Voicemail audio player. Routes to the LOUDSPEAKER (voicemail was inaudible
+/// because the app's call audio session defaults to the earpiece), tracks
+/// position for a scrub bar, supports seek, and a speaker⇄earpiece toggle.
+@MainActor
+final class VMPlayer: ObservableObject {
+    @Published var currentId: String?     // VMItem.id loaded
+    @Published var isPlaying = false
+    @Published var position: Double = 0    // seconds
+    @Published var duration: Double = 0
+    @Published var onSpeaker = true
+
+    private var player: AVPlayer?
+    private var timeObs: Any?
+    private var endObs: NSObjectProtocol?
+
+    /// Tap the same message = pause/resume; a different one = start it.
+    func toggle(url: URL, token: String, id: String) {
+        if currentId == id {
+            if isPlaying { player?.pause(); isPlaying = false }
+            else { player?.play(); isPlaying = true }
+            return
+        }
+        start(url: url, token: token, id: id)
+    }
+
+    private func start(url: URL, token: String, id: String) {
+        stop()
+        onSpeaker = true
+        applyRoute()
+        let asset = AVURLAsset(url: url, options: ["AVURLAssetHTTPHeaderFieldsKey": ["Authorization": "Bearer \(token)"]])
+        let item = AVPlayerItem(asset: asset)
+        let p = AVPlayer(playerItem: item)
+        player = p; currentId = id; isPlaying = true; position = 0; duration = 0
+        Task { @MainActor in
+            if let d = try? await asset.load(.duration) {
+                let s = CMTimeGetSeconds(d); if s.isFinite && s > 0 { duration = s }
+            }
+        }
+        timeObs = p.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.2, preferredTimescale: 600), queue: .main) { [weak self] t in
+            guard let self else { return }
+            let s = CMTimeGetSeconds(t); if s.isFinite { self.position = s }
+            if self.duration <= 0, let d = p.currentItem?.duration, d.isNumeric {
+                let ds = CMTimeGetSeconds(d); if ds.isFinite && ds > 0 { self.duration = ds }
+            }
+        }
+        endObs = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
+            Task { @MainActor in guard let self else { return }; self.isPlaying = false; self.position = self.duration }
+        }
+        p.play()
+    }
+
+    func seek(to sec: Double) {
+        position = sec
+        player?.seek(to: CMTime(seconds: sec, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+
+    func toggleSpeaker() { onSpeaker.toggle(); applyRoute() }
+
+    /// Loud main speaker by default (.playback); earpiece for privacy.
+    private func applyRoute() {
+        let s = AVAudioSession.sharedInstance()
+        if onSpeaker {
+            try? s.setCategory(.playback, mode: .spokenAudio, options: [.allowBluetooth, .allowBluetoothA2DP])
+        } else {
+            try? s.setCategory(.playAndRecord, mode: .voiceChat, options: [.allowBluetooth])
+            try? s.overrideOutputAudioPort(.none)
+        }
+        try? s.setActive(true)
+    }
+
+    func stop() {
+        if let o = timeObs { player?.removeTimeObserver(o); timeObs = nil }
+        if let e = endObs { NotificationCenter.default.removeObserver(e); endObs = nil }
+        player?.pause(); player = nil
+        isPlaying = false; currentId = nil; position = 0; duration = 0
+    }
+}
+
+func vmTimeString(_ seconds: Double) -> String {
+    guard seconds.isFinite && seconds >= 0 else { return "0:00" }
+    let s = Int(seconds.rounded()); return String(format: "%d:%02d", s / 60, s % 60)
+}
+
 /// The voicemail list — NO NavigationStack of its own, so it drops cleanly into
 /// either the standalone VoicemailView or the Recents "Voicemail" segment.
 /// Aggregates voicemail across EVERY signed-in line.
 struct VoicemailList: View {
     @EnvironmentObject var session: SessionStore
+    @StateObject private var vm = VMPlayer()
     @State private var items: [VMItem] = []          // merged across all lines, newest first
     @State private var status: String?
-    @State private var player: AVPlayer?
-    @State private var playingId: String?            // VMItem.id currently playing
 
     var body: some View {
             List {
@@ -605,24 +687,53 @@ struct VoicemailList: View {
                         if let summary = m.ai_summary ?? m.transcript, !summary.isEmpty {
                             Text(summary).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                         }
-                        HStack(spacing: 20) {
+                        // SCRUB BAR — shows for the loaded message; drag to move
+                        // through the message (Mark 2026-07-24).
+                        if vm.currentId == it.id {
+                            VStack(spacing: 2) {
+                                Slider(value: Binding(get: { vm.position },
+                                                      set: { vm.seek(to: $0) }),
+                                       in: 0...max(vm.duration, 0.1))
+                                    .tint(.accentColor)
+                                HStack {
+                                    Text(vmTimeString(vm.position))
+                                    Spacer()
+                                    Text(vmTimeString(vm.duration))
+                                }.font(.caption2).foregroundStyle(.secondary)
+                            }
+                        }
+                        HStack(spacing: 16) {
+                            // Play / Pause
                             Button {
-                                toggle(it)
+                                play(it)
                             } label: {
-                                Label(playingId == it.id ? "Stop" : "Play",
-                                      systemImage: playingId == it.id ? "stop.fill" : "play.fill")
+                                Image(systemName: (vm.currentId == it.id && vm.isPlaying) ? "pause.fill" : "play.fill")
+                            }.buttonStyle(.bordered)
+                            // Speakerphone toggle (loud speaker ⇄ earpiece)
+                            Button {
+                                vm.toggleSpeaker()
+                            } label: {
+                                Image(systemName: vm.onSpeaker ? "speaker.wave.3.fill" : "speaker.fill")
                             }
                             .buttonStyle(.bordered)
+                            .tint(vm.onSpeaker ? .accentColor : .secondary)
+                            .disabled(vm.currentId != it.id)
+                            // Mark read / unread (visible button, not just swipe)
+                            Button {
+                                Task { await setRead(it, to: m.isUnread) }
+                            } label: {
+                                Image(systemName: m.isUnread ? "envelope.open" : "envelope.badge")
+                            }.buttonStyle(.bordered)
                             if let n = m.caller_id?.filter({ "0123456789+*#".contains($0) }), !n.isEmpty {
                                 Button {
-                                    player?.pause(); playingId = nil
+                                    vm.stop()
                                     CallManager.shared.startOutgoingCall(to: n)
                                 } label: {
-                                    Label("Call Back", systemImage: "phone.fill")
-                                }
-                                .buttonStyle(.bordered).tint(.green)
+                                    Image(systemName: "phone.fill")
+                                }.buttonStyle(.bordered).tint(.green)
                             }
-                            if let d = m.duration, d > 0 {
+                            Spacer()
+                            if let d = m.duration, d > 0, vm.currentId != it.id {
                                 Text("\(d)s").font(.caption).foregroundStyle(.secondary)
                             }
                         }
@@ -651,6 +762,7 @@ struct VoicemailList: View {
             }
             .task { await load() }
             .refreshable { await load() }
+            .onDisappear { vm.stop() }   // stop playback + release the audio route when leaving
     }
 
     struct Reply: Codable { let messages: [VMessage] }
@@ -680,20 +792,13 @@ struct VoicemailList: View {
                : (merged.isEmpty ? "No voicemails." : nil)
     }
 
-    private func toggle(_ it: VMItem) {
-        if playingId == it.id { player?.pause(); playingId = nil; return }
+    private func play(_ it: VMItem) {
         guard let tok = session.userToken(for: it.account) else { return }
         let url = it.account.apiBase.appendingPathComponent("user/voicemail/\(it.msg.id)/audio")
-        // AVURLAsset carries the Bearer header the /user audio endpoint expects
-        // (AVPlayer alone can't set request headers).
-        let asset = AVURLAsset(url: url, options: [
-            "AVURLAssetHTTPHeaderFieldsKey": ["Authorization": "Bearer \(tok)"]
-        ])
-        player = AVPlayer(playerItem: AVPlayerItem(asset: asset))
-        player?.play()
-        playingId = it.id
-        // Server marks the message read when it serves the audio; mirror it in the UI.
-        updateLocalRead(it, read: true)
+        vm.toggle(url: url, token: tok, id: it.id)   // routes to speaker, tracks position
+        // Server marks the message read when it serves the audio; mirror it the
+        // first time we load this one.
+        if it.msg.isUnread { updateLocalRead(it, read: true) }
     }
 
     /// Flip a voicemail's read state on its own line's server, then locally.
@@ -718,7 +823,7 @@ struct VoicemailList: View {
     /// Remove a voicemail on its own line's server + locally.
     private func deleteVM(_ it: VMItem) async {
         guard let tok = session.userToken(for: it.account) else { return }
-        if playingId == it.id { player?.pause(); playingId = nil }
+        if vm.currentId == it.id { vm.stop() }
         var req = URLRequest(url: it.account.apiBase.appendingPathComponent("user/voicemail/\(it.msg.id)"))
         req.httpMethod = "DELETE"
         req.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization")
