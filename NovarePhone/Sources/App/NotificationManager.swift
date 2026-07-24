@@ -44,34 +44,43 @@ final class NotificationManager: ObservableObject {
         UNUserNotificationCenter.current().setBadgeCount(missedCount + vmUnread + smsUnread)
     }
 
-    /// BADGES 1.1 — pull the real unread counts from the server on foreground so
-    /// the Voicemail / Messages buttons show a number BEFORE you open them
-    /// (previously the count was only known once you'd opened each screen).
+    /// BADGES — pull the real unread counts from the server on foreground so the
+    /// Recents (voicemail) tab and Messages button show a number BEFORE you open
+    /// them.
+    ///
+    /// UNDERCOUNT FIX (Mark 2026-07-24): this used to query only the PRIMARY
+    /// line, so a badge could read "1" while another line held 9 unread. It now
+    /// sums unread voicemail + inbound texts across EVERY signed-in line.
     func refreshServerCounts() async {
-        guard let p = SessionStore.shared.provisioning,
-              let tok = SessionStore.shared.userToken(for: p) else { return }
+        let accounts = SessionStore.shared.accounts
+        var vmTotal = 0, smsTotal = 0
+        for p in accounts {
+            guard let tok = SessionStore.shared.userToken(for: p) else { continue }
 
-        // Voicemail unread
-        var vm = URLRequest(url: p.apiBase.appendingPathComponent("user/voicemail"))
-        vm.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization")
-        if let (data, resp) = try? await URLSession.shared.data(for: vm),
-           (resp as? HTTPURLResponse)?.statusCode == 200 {
-            struct VM: Codable { struct M: Codable { let read: Int? }; let messages: [M] }
-            if let r = try? JSONDecoder().decode(VM.self, from: data) {
-                setVoicemailUnread(r.messages.filter { ($0.read ?? 1) == 0 }.count)
+            // Voicemail unread on this line
+            var vm = URLRequest(url: p.apiBase.appendingPathComponent("user/voicemail"))
+            vm.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization")
+            if let (data, resp) = try? await URLSession.shared.data(for: vm),
+               (resp as? HTTPURLResponse)?.statusCode == 200 {
+                struct VM: Codable { struct M: Codable { let read: Int? }; let messages: [M] }
+                if let r = try? JSONDecoder().decode(VM.self, from: data) {
+                    vmTotal += r.messages.filter { ($0.read ?? 1) == 0 }.count
+                }
+            }
+
+            // Inbound texts not yet read on this line
+            var sms = URLRequest(url: p.apiBase.appendingPathComponent("user/sms"))
+            sms.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization")
+            if let (data, resp) = try? await URLSession.shared.data(for: sms),
+               (resp as? HTTPURLResponse)?.statusCode == 200 {
+                struct SM: Codable { struct M: Codable { let direction: String; let read: Int? }; let messages: [M] }
+                if let r = try? JSONDecoder().decode(SM.self, from: data) {
+                    smsTotal += r.messages.filter { $0.direction == "inbound" && ($0.read ?? 1) == 0 }.count
+                }
             }
         }
-
-        // Text unread (inbound not yet read)
-        var sms = URLRequest(url: p.apiBase.appendingPathComponent("user/sms"))
-        sms.setValue("Bearer \(tok)", forHTTPHeaderField: "Authorization")
-        if let (data, resp) = try? await URLSession.shared.data(for: sms),
-           (resp as? HTTPURLResponse)?.statusCode == 200 {
-            struct SM: Codable { struct M: Codable { let direction: String; let read: Int? }; let messages: [M] }
-            if let r = try? JSONDecoder().decode(SM.self, from: data) {
-                setSmsUnread(r.messages.filter { $0.direction == "inbound" && ($0.read ?? 1) == 0 }.count)
-            }
-        }
+        setVoicemailUnread(vmTotal)
+        setSmsUnread(smsTotal)
     }
 }
 

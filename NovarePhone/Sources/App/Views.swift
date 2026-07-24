@@ -54,16 +54,21 @@ struct SignInView: View {
 struct MainTabView: View {
     @StateObject private var call = CallSession.shared
     @StateObject private var locations = LocationReporter.shared
+    @StateObject private var notifs = NotificationManager.shared
     @State private var tab = 0
 
     var body: some View {
-        // iOS shows at most 5 bottom tabs (a 6th buries the extras behind
-        // "More"). Ext takes the 5th slot per Mark; Voicemail moved to the
-        // tape button in the Keypad header — same screen, one tap away.
+        // iOS shows at most 5 bottom tabs. Ext takes the 5th slot per Mark.
+        // Voicemail now has a real home in the Recents tab (All / Missed /
+        // Voicemail toggle), with the unread count badged on that tab — so the
+        // app-icon "N" always has a discoverable place to go. It is still also
+        // reachable from the tape icon in the Keypad header.
         TabView(selection: $tab) {
             FavoritesView().tabItem { Label("Favorites", systemImage: "star.fill") }.tag(0)
             ExtensionsView().tabItem { Label("Ext", systemImage: "person.3.fill") }.tag(1)
-            RecentsView().tabItem { Label("Recents", systemImage: "clock.fill") }.tag(2)
+            RecentsView().tabItem { Label("Recents", systemImage: "clock.fill") }
+                .badge(notifs.vmUnread)   // unread-voicemail count on the Recents tab (VM's new home)
+                .tag(2)
             ContactsView().tabItem { Label("Contacts", systemImage: "person.crop.circle") }.tag(3)
             DialerView().tabItem { Label("Keypad", systemImage: "circle.grid.3x3.fill") }.tag(4)
         }
@@ -445,15 +450,27 @@ struct DialerView: View {
 struct RecentsView: View {
     @StateObject private var history = CallHistory.shared
     @StateObject private var contacts = ContactsStore.shared
+    @StateObject private var notifs = NotificationManager.shared
     @State private var showNumbers = false   // toggle name ⇄ number for the whole list
+    // VOICEMAIL HOME (Mark 2026-07-24): Recents gains an All / Missed / Voicemail
+    // toggle so voicemail has an obvious, badged home without adding a 6th tab.
+    @State private var seg = 0   // 0 = All calls, 1 = Missed, 2 = Voicemail
+
+    private var shownRecords: [CallRecord] {
+        seg == 1 ? history.records.filter(\.missed) : history.records
+    }
 
     var body: some View {
         NavigationStack {
-            List {
-                if history.records.isEmpty {
-                    Text("No calls yet.").foregroundStyle(.secondary)
-                }
-                ForEach(history.records) { r in
+            Group {
+              if seg == 2 {
+                VoicemailList().environmentObject(SessionStore.shared)
+              } else {
+                List {
+                    if shownRecords.isEmpty {
+                        Text(seg == 1 ? "No missed calls." : "No calls yet.").foregroundStyle(.secondary)
+                    }
+                    ForEach(shownRecords) { r in
                     let name = contacts.name(forNumber: r.number)
                     // Primary line: contact name if known (unless toggled to numbers);
                     // secondary line shows the other value so both are always available.
@@ -482,15 +499,30 @@ struct RecentsView: View {
                         }
                     }
                 }
-            }
+                }   // close List
+              }     // close else
+            }       // close Group
             .navigationTitle("Recents")
             .novareChrome()
-            .toolbar {
-                ToolbarItem(placement: .topBarLeading) {
-                    Button(showNumbers ? "Names" : "Numbers") { showNumbers.toggle() }
+            .safeAreaInset(edge: .top) {
+                Picker("", selection: $seg) {
+                    Text("All").tag(0)
+                    Text("Missed").tag(1)
+                    Text(notifs.vmUnread > 0 ? "Voicemail (\(notifs.vmUnread))" : "Voicemail").tag(2)
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    if !history.records.isEmpty { Button("Clear") { history.clear() } }
+                .pickerStyle(.segmented)
+                .padding(.horizontal).padding(.top, 6).padding(.bottom, 4)
+                .background(.bar)
+            }
+            .toolbar {
+                // Names/Numbers + Clear apply to the call lists only, not voicemail.
+                if seg != 2 {
+                    ToolbarItem(placement: .topBarLeading) {
+                        Button(showNumbers ? "Names" : "Numbers") { showNumbers.toggle() }
+                    }
+                    ToolbarItem(placement: .topBarTrailing) {
+                        if !shownRecords.isEmpty { Button("Clear") { history.clear() } }
+                    }
                 }
             }
             .task { await contacts.load() }
@@ -513,7 +545,21 @@ struct VMessage: Codable, Identifiable {
     var isUnread: Bool { (read ?? 1) == 0 }
 }
 
+/// Backward-compatible standalone Voicemail screen (still opened from the tape
+/// icon in the Keypad header). The list itself now lives in VoicemailList so it
+/// can ALSO be embedded inside the Recents tab (Mark 2026-07-24: "vm must have a
+/// home") without duplicating any of the load/play/read/delete logic.
 struct VoicemailView: View {
+    var body: some View {
+        NavigationStack {
+            VoicemailList().navigationTitle("Voicemail")
+        }
+    }
+}
+
+/// The voicemail list — NO NavigationStack of its own, so it drops cleanly into
+/// either the standalone VoicemailView or the Recents "Voicemail" segment.
+struct VoicemailList: View {
     @EnvironmentObject var session: SessionStore
     @State private var messages: [VMessage] = []
     @State private var status: String?
@@ -521,7 +567,6 @@ struct VoicemailView: View {
     @State private var playingId: Int?
 
     var body: some View {
-        NavigationStack {
             List {
                 if let s = status {
                     Text(s).font(.footnote).foregroundStyle(.secondary)
@@ -592,10 +637,8 @@ struct VoicemailView: View {
                     }
                 }
             }
-            .navigationTitle("Voicemail")
             .task { await load() }
             .refreshable { await load() }
-        }
     }
 
     private func load() async {
